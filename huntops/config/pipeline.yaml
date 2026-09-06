@@ -1,0 +1,150 @@
+# HuntOps — Pipeline DAG Definition
+# Defines the phase execution order with dependencies
+# Used by orchestrator.sh for topological sorting and parallel execution
+
+phases:
+  # Phase 1: RECONNAISSANCE — Gather subdomains, DNS records, certificates
+  # Parallel: multiple recon tools can run simultaneously
+  - name: recon
+    description: "Subdomain enumeration and certificate transparency"
+    adapters: [subfinder, amass, assetfinder, crtsh, certspotter]
+    depends_on: []
+    parallel: true
+    timeout: 300
+    # Each adapter outputs subdomain lists; orchestrator aggregates
+
+  # Phase 2: DNS VALIDATION — Resolve and validate discovered subdomains
+  # Sequential: needs recon output first
+  - name: dns_validation
+    description: "DNS resolution and validation of discovered hosts"
+    adapters: [dnsx]
+    depends_on: [recon]
+    parallel: false
+    timeout: 900
+
+  # Phase 3: PORT SCANNING — Discover open ports and services
+  # Parallel: naabu (fast) + nmap (detailed) can run together
+  - name: port_scan
+    description: "Port scanning and service enumeration"
+    adapters: [naabu, nmap]
+    depends_on: [dns_validation]
+    parallel: true
+    timeout: 1800
+
+  # Phase 4: WEB PROBING — Identify live HTTP/HTTPS endpoints
+  # Sequential: needs dns_validation for host list
+  - name: web_probe
+    description: "HTTP probing and technology fingerprinting"
+    adapters: [httpx]
+    depends_on: [dns_validation]
+    parallel: false
+    timeout: 600
+
+  # Phase 5: VULNERABILITY SCANNING — Active vulnerability detection
+  # Parallel: nuclei (template-based) + nikto (web server) + sqlmap (SQLi)
+  # zap is a placeholder (not yet implemented) — disabled in adapters.yaml
+  - name: vuln_scan
+    description: "Active vulnerability scanning"
+    adapters: [nuclei, nikto, sqlmap]
+    depends_on: [web_probe]
+    parallel: true
+    timeout: 3600
+
+  # Phase 6: TLS/SSL SCANNING — Certificate and TLS configuration analysis
+  # Parallel with vuln_scan (both depend on web_probe)
+  - name: tls_scan
+    description: "TLS/SSL certificate and configuration analysis"
+    adapters: [testssl]
+    depends_on: [web_probe]
+    parallel: false
+    timeout: 600
+
+  # Phase 7: CONTENT DISCOVERY — Directory/file enumeration and fuzzing
+  # Parallel: ffuf + gobuster + feroxbuster can run simultaneously
+  - name: content_discovery
+    description: "Directory/file fuzzing and content discovery"
+    adapters: [ffuf, gobuster, feroxbuster]
+    depends_on: [web_probe]
+    parallel: true
+    timeout: 1800
+
+  # Phase 7b: XSS SCANNING — Dedicated XSS detection
+  # Sequential: runs after content_discovery for focused XSS testing
+  - name: xss_scan
+    description: "Cross-site scripting detection (DOM, reflected, stored)"
+    adapters: [dalfox]
+    depends_on: [content_discovery]
+    parallel: false
+    timeout: 1200
+
+  # Phase 8: INTEL ENGINE — Security headers, CORS, methods, etc.
+  # Sequential: needs web_probe + content_discovery for full picture
+  - name: intel
+    description: "Security intelligence gathering (headers, CORS, methods, cookies)"
+    adapters: [intel_engine]
+    depends_on: [web_probe, content_discovery]
+    parallel: false
+    timeout: 600
+
+  # Phase 9: CVE CORRELATION — Match service versions to known CVEs
+  # Sequential: needs vuln_scan + port_scan for version info
+  - name: cve_correlation
+    description: "CVE correlation from service versions"
+    adapters: [cve_engine]
+    depends_on: [vuln_scan, port_scan]
+    parallel: false
+    timeout: 300
+
+  # Phase 10: CANDIDATE ENGINE — High-confidence findings (IDOR, JWT, SSRF, etc.)
+  # Sequential: needs intel + vuln_scan for context
+  - name: candidates
+    description: "High-confidence candidate findings (IDOR, JWT, GraphQL, SSRF, race, auth)"
+    adapters: [candidates_engine]
+    depends_on: [intel, vuln_scan]
+    parallel: false
+    timeout: 600
+
+  # Phase 11: STRATEGY ENGINE — Adaptive attack-vector hunting (Ebb & Flow)
+  # Sequential: needs intel, cve_correlation, candidates for context
+  - name: strategy
+    description: "Adaptive attack-vector hunting (Ebb & Flow)"
+    adapters: [strategy_engine]
+    depends_on: [intel, cve_correlation, candidates]
+    parallel: false
+    timeout: 600
+
+  # Phase 12: REPORT GENERATION — Final HTML/Markdown/SARIF reports
+  # Sequential: must run last, depends on all finding phases
+  - name: reporting
+    description: "Generate final reports and deliverables"
+    adapters: [report_gen, outputs_gen]
+    depends_on: [vuln_scan, tls_scan, content_discovery, intel, cve_correlation, candidates, strategy]
+    parallel: false
+    timeout: 120
+
+# =========================================================================
+# ALTERNATIVE PIPELINE MODES (for quick/deep/bb modes)
+# =========================================================================
+
+# Quick mode: minimal phases for fast scans
+quick_mode:
+  phases: [recon, dns_validation, web_probe, vuln_scan, reporting]
+  description: "Quick scan - subdomains, DNS, web probe, basic vuln scan, report"
+
+# BB (Bug Bounty) mode: standard comprehensive scan
+bb_mode:
+  phases: [recon, dns_validation, port_scan, web_probe, vuln_scan, tls_scan, content_discovery, xss_scan, intel, cve_correlation, candidates, strategy, reporting]
+  description: "Bug bounty scan - full pipeline with all phases"
+
+# Deep mode: exhaustive scan with extended timeouts
+deep_mode:
+  phases: [recon, dns_validation, port_scan, web_probe, vuln_scan, tls_scan, content_discovery, xss_scan, intel, cve_correlation, candidates, strategy, reporting]
+  description: "Deep scan - same as BB but with extended timeouts and no-DOS flags"
+  timeout_multiplier: 3
+
+# Extended mode: BB + new attack surface adapters
+extended_mode:
+  phases: [recon, dns_validation, port_scan, web_probe, vuln_scan, tls_scan, content_discovery, xss_scan, intel, cve_correlation, candidates, strategy, reporting]
+  description: "Extended scan - BB mode plus new adapters (cms, takeover, supply_chain, kiterunner, wsrecon, js_analyzer, jwt_analyzer, cloud_recon)"
+  # Note: New adapters auto-register via adapters.yaml; add phases here when ready
+  timeout_multiplier: 2

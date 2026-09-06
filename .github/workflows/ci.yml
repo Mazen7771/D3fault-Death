@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    name: ShellCheck Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: |
+          find . -name '*.sh' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "== shellcheck $f =="
+            shellcheck -x "$f" || EXIT=1
+          done
+          test -z "${EXIT:-}" || exit 1
+
+  syntax:
+    name: Bash Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check all scripts
+        run: |
+          EXIT=0
+          for f in $(find . -name '*.sh' -not -path './.git/*'); do
+            bash -n "$f" 2>/dev/null || { echo "FAIL bash -n: $f"; EXIT=1; }
+          done
+          exit $EXIT
+
+  smoke-tests:
+    name: Offline Smoke Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: HuntOps smoke suite (offline)
+        run: |
+          if [ -x huntops/tests/smoke.sh ]; then
+            ./huntops/tests/smoke.sh
+          else
+            echo "huntops/tests/smoke.sh not found — skipping"
+          fi
+
+      - name: OMNI integration smoke (static only)
+        run: |
+          if [ -x tests/integration_smoke.sh ]; then
+            ./tests/integration_smoke.sh -v
+          else
+            echo "tests/integration_smoke.sh not found — skipping"
+          fi

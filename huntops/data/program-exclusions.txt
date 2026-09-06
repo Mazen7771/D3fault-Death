@@ -1,0 +1,44 @@
+# HuntOps — program-exclusion patterns (regex). Findings whose DETAIL matches
+# are auto-demoted to info.txt (program-excluded) so the report stays clean.
+# Matches the common HackerOne program exclusion language. Edit per program.
+
+missing (ssl|tls|dns|csp|content-security|security header|hsts|httponly) (header|flag)?[^|]*without
+without the httponly flag
+clickjacking on non-sensitive
+missing x-frame-options
+missing security headers
+cookie .* without httponly
+set-cookie: .*httponly
+weak-hsts
+missing-sri
+assetlinks
+robots-txt
+waf-detect
+rdap-whois
+dmarc
+dkim
+mx-fingerprint
+nameserver-fingerprint
+caa-fingerprint
+aaaa-fingerprint
+tls-version
+ssl-issuer
+ssl-dns-names
+wildcard-tls
+aws-cloudfront-service
+aws-detect
+tech-detect
+http-missing-security-headers
+weak-csp
+missing-cross-origin
+broken link
+harmless redirect
+ux-only
+username enumeration without additional impact
+account enumeration without additional impact
+rate-limit
+rate limit
+self-xss
+content spoofing
+text injection without cross-user impact
+brute force

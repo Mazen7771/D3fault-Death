@@ -1,0 +1,338 @@
+# HuntOps — Adapter Registry
+# Central registry of all scanner adapters (bash + Go)
+# Used by orchestrator.sh to build the adapter registry and pipeline
+
+adapters:
+  # =========================================================================
+  # RECONNAISSANCE ADAPTERS (bash)
+  # =========================================================================
+  subfinder:
+    type: bash
+    path: "lib/adapter_subfinder.sh"
+    capabilities: [recon, subdomains]
+    enabled: true
+    priority: 10
+    requires_api_key: false
+
+  amass:
+    type: bash
+    path: "lib/adapter_amass.sh"
+    capabilities: [recon, subdomains]
+    enabled: true
+    priority: 20
+    requires_api_key: false
+
+  assetfinder:
+    type: bash
+    path: "lib/adapter_assetfinder.sh"
+    capabilities: [recon, subdomains]
+    enabled: true
+    priority: 30
+    requires_api_key: false
+
+  crtsh:
+    type: bash
+    path: "lib/adapter_crtsh.sh"
+    capabilities: [recon, subdomains]
+    enabled: true
+    priority: 40
+    requires_api_key: false
+
+  certspotter:
+    type: bash
+    path: "lib/adapter_certspotter.sh"
+    capabilities: [recon, subdomains]
+    enabled: true
+    priority: 50
+    requires_api_key: false
+    api_key_env: "CERTSPOTTER_API_KEY"
+
+  dnsx:
+    type: bash
+    path: "lib/adapter_dnsx.sh"
+    capabilities: [recon, dns, validation]
+    enabled: true
+    priority: 60
+    requires_api_key: false
+
+  httpx:
+    type: bash
+    path: "lib/adapter_httpx.sh"
+    capabilities: [recon, web, http]
+    enabled: true
+    priority: 70
+    requires_api_key: false
+
+  naabu:
+    type: bash
+    path: "lib/adapter_naabu.sh"
+    capabilities: [recon, portscan]
+    enabled: true
+    priority: 80
+    requires_api_key: false
+
+  nmap:
+    type: bash
+    path: "lib/adapter_nmap.sh"
+    capabilities: [recon, portscan, service]
+    enabled: true
+    priority: 90
+    requires_api_key: false
+
+  # =========================================================================
+  # VULNERABILITY SCANNER ADAPTERS
+  # =========================================================================
+  nuclei:
+    type: bash
+    path: "lib/adapter_nuclei.sh"
+    capabilities: [vuln, cve, templates]
+    enabled: true
+    priority: 100
+    requires_api_key: false
+
+  zap:
+    # ZAP adapter not yet implemented; placeholder kept disabled.
+    type: bash
+    path: "lib/adapter_zap.sh"
+    capabilities: [vuln, tls, content, spider, ajax]
+    enabled: false
+    priority: 110
+    requires_api_key: false
+
+  nikto:
+    type: bash
+    path: "lib/adapter_nikto.sh"
+    capabilities: [vuln, web]
+    enabled: true
+    priority: 120
+    requires_api_key: false
+
+  sqlmap:
+    type: bash
+    path: "lib/adapter_sqlmap.sh"
+    capabilities: [vuln, sqli, params]
+    enabled: true
+    priority: 130
+    requires_api_key: false
+
+  ffuf:
+    type: bash
+    path: "lib/adapter_ffuf.sh"
+    capabilities: [content, fuzzing, dirs]
+    enabled: true
+    priority: 140
+    requires_api_key: false
+
+  gobuster:
+    type: bash
+    path: "lib/adapter_gobuster.sh"
+    capabilities: [content, fuzzing, dirs, dns]
+    enabled: true
+    priority: 150
+    requires_api_key: false
+
+  feroxbuster:
+    type: bash
+    path: "lib/adapter_feroxbuster.sh"
+    capabilities: [content, fuzzing, dirs, recursive, screenshots]
+    enabled: true
+    priority: 155
+    requires_api_key: false
+
+  dalfox:
+    type: bash
+    path: "lib/adapter_dalfox.sh"
+    capabilities: [vuln, xss, dom-xss, reflected-xss, stored-xss]
+    enabled: true
+    priority: 158
+    requires_api_key: false
+
+  # =========================================================================
+  # TLS / SSL ADAPTERS
+  # =========================================================================
+  testssl:
+    type: bash
+    path: "lib/adapter_testssl.sh"
+    capabilities: [tls, ssl, certs, vuln]
+    enabled: true
+    priority: 160
+    requires_api_key: false
+
+  # =========================================================================
+  # INTEL / CVE / CANDIDATE ENGINES (bash)
+  # =========================================================================
+  intel_engine:
+    type: bash
+    path: "lib/adapter_intel.sh"
+    capabilities: [intel, headers, cors, methods, clickjacking, cookies]
+    enabled: true
+    priority: 200
+    requires_api_key: false
+
+  cve_engine:
+    type: bash
+    path: "lib/adapter_cve.sh"
+    capabilities: [cve, correlation, version]
+    enabled: true
+    priority: 210
+    requires_api_key: false
+
+  candidates_engine:
+    type: bash
+    path: "lib/adapter_candidates.sh"
+    capabilities: [intel, params, idor, jwt, graphql, ssrf, race, auth, secrets, cloud, takeover, cors]
+    enabled: true
+    priority: 220
+    requires_api_key: false
+
+  strategy_engine:
+    type: bash
+    path: "lib/adapter_strategy.sh"
+    capabilities: [strategy, attack-vector, low-hanging, param-injection, api-graphql, cors, cloud-storage, auth-bypass, race, takeover, secrets, cve-poc]
+    enabled: true
+    priority: 230
+    requires_api_key: false
+
+  subjack:
+    type: bash
+    path: "lib/adapter_subjack.sh"
+    capabilities: [takeover, subdomain, cname]
+    enabled: true
+    priority: 240
+    requires_api_key: false
+
+  subzy:
+    type: bash
+    path: "lib/adapter_subzy.sh"
+    capabilities: [takeover, subdomain, cname, fingerprint]
+    enabled: true
+    priority: 245
+    requires_api_key: false
+
+  cms_scanner:
+    type: bash
+    path: "lib/adapter_cms.sh"
+    capabilities: [vuln, cms, wordpress, drupal, joomla, detection]
+    enabled: true
+    priority: 250
+    requires_api_key: false
+
+  supply_chain:
+    type: bash
+    path: "lib/adapter_supply_chain.sh"
+    capabilities: [vuln, sbom, dependency, grype, syft]
+    enabled: true
+    priority: 255
+    requires_api_key: false
+
+  kiterunner:
+    type: bash
+    path: "lib/adapter_kiterunner.sh"
+    capabilities: [recon, api, graphql, openapi, endpoints]
+    enabled: true
+    priority: 260
+    requires_api_key: false
+
+  wsrecon:
+    type: bash
+    path: "lib/adapter_wsrecon.sh"
+    capabilities: [recon, websocket, ws, wss]
+    enabled: true
+    priority: 265
+    requires_api_key: false
+
+  js_analyzer:
+    type: bash
+    path: "lib/adapter_js_analyzer.sh"
+    capabilities: [recon, js, endpoints, secrets, jsluice, mantra]
+    enabled: true
+    priority: 270
+    requires_api_key: false
+
+  jwt_analyzer:
+    type: bash
+    path: "lib/adapter_jwt.sh"
+    capabilities: [vuln, jwt, auth-bypass, alg-none, kid-injection, jwks]
+    enabled: true
+    priority: 275
+    requires_api_key: false
+
+  cloud_recon:
+    type: bash
+    path: "lib/adapter_cloud.sh"
+    capabilities: [recon, cloud, aws, azure, gcp, buckets, iam]
+    enabled: true
+    priority: 280
+    requires_api_key: false
+
+  # =========================================================================
+  # CLOUD / SAAS SCANNERS (placeholders — adapters not implemented)
+  # =========================================================================
+  escape:
+    # Placeholder: requires Escape API integration
+    type: bash
+    path: "lib/adapter_escape.sh"
+    capabilities: [vuln, recon, graphql, api]
+    enabled: false
+    priority: 300
+    requires_api_key: true
+    api_key_env: "ESCAPE_API_KEY"
+
+  invicti:
+    # Placeholder: requires Invicti API integration
+    type: bash
+    path: "lib/adapter_invicti.sh"
+    capabilities: [vuln, web, api, daast]
+    enabled: false
+    priority: 310
+    requires_api_key: true
+    api_key_env: "INVICTI_API_KEY"
+
+  zeropath:
+    # Placeholder: requires ZeroPath API integration
+    type: bash
+    path: "lib/adapter_zeropath.sh"
+    capabilities: [vuln, code, sast, secrets]
+    enabled: false
+    priority: 320
+    requires_api_key: true
+    api_key_env: "ZEROPATH_API_KEY"
+
+  acunetix:
+    # Placeholder: requires Acunetix API integration
+    type: bash
+    path: "lib/adapter_acunetix.sh"
+    capabilities: [vuln, web, network]
+    enabled: false
+    priority: 330
+    requires_api_key: true
+    api_key_env: "ACUNETIX_API_KEY"
+
+  burp:
+    # Placeholder: requires Burp Suite API integration
+    type: bash
+    path: "lib/adapter_burp.sh"
+    capabilities: [vuln, web, manual]
+    enabled: false
+    priority: 340
+    requires_api_key: true
+    api_key_env: "BURP_API_KEY"
+
+  # =========================================================================
+  # REPORTING ADAPTERS
+  # =========================================================================
+  report_gen:
+    type: bash
+    path: "lib/adapter_report.sh"
+    capabilities: [report, html, markdown, sarif]
+    enabled: true
+    priority: 900
+    requires_api_key: false
+
+  outputs_gen:
+    type: bash
+    path: "lib/adapter_outputs.sh"
+    capabilities: [outputs, dossier, attack_angles]
+    enabled: true
+    priority: 910
+    requires_api_key: false

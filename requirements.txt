@@ -1,0 +1,314 @@
+# OMNIROUTE Bug-Stealer — Complete Dependency Manifest
+# ============================================================
+# This file documents ALL tools required by:
+#   • D3fault-death.sh (monolithic scanner v2.0.0)
+#   • huntops/huntops.sh (modular adapter pipeline)
+#   • omni.sh (unified wrapper running both)
+#
+# INSTALLATION OPTIONS:
+#   1. Automated (recommended):
+#        ./omni.sh -i                    # installs for BOTH engines
+#      OR
+#        ./huntops/huntops.sh -i         # HuntOps only
+#      OR
+#        ./D3fault-death.sh -i           # D3fault-death only
+#
+#   2. Manual (use this file as reference):
+#        sudo apt-get install -y <apt-packages>
+#        go install <go-modules>
+#        pip3 install --break-system-packages --user <pip-packages>
+#
+#   3. Python dev dependencies (for testing/CI):
+#        pip install -r requirements.txt  # (this file's Python section)
+#
+# ------------------------------------------------------------
+# SECTION 1: APT PACKAGES (Debian/Ubuntu/Kali)
+# ------------------------------------------------------------
+# Core utilities (required by ALL)
+jq curl dig nmap masscan whatweb wafw00f nikto gobuster dirb exploitdb sqlmap wpscan terminator
+
+# DNS / Recon
+massdns dnsrecon dnsenum
+
+# Wordlists (required for brute-force phases)
+seclists
+
+# SSL/TLS testing
+testssl.sh  # (manual install: git clone /home/mazin/tools/testssl_tool)
+
+# Optional but recommended
+whois host
+
+# --- NEW: Visual Recon & Screenshots ---
+# (apt may have older versions; prefer go install for latest)
+# golang-github-sensepost-gowitness  # apt name on Kali
+# aquatone  # manual binary install
+
+# --- NEW: CMS Scanners ---
+wpscan  # already listed above
+droopescan  # pip install droopescan
+cmsmap  # pip install cmsmap
+
+# --- NEW: Cloud Recon ---
+# cloud_enum  # pip install cloud_enum
+# prowler  # pip install prowler (AWS/Azure/GCP)
+
+# ------------------------------------------------------------
+# SECTION 2: GO MODULES (install via: go install <module>)
+# Requires Go 1.21+ and $HOME/go/bin in PATH
+# ------------------------------------------------------------
+# ProjectDiscovery suite (core recon)
+github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+github.com/projectdiscovery/katana/cmd/katana@latest
+github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest
+github.com/projectdiscovery/chaos-client/cmd/chaos@latest
+github.com/projectdiscovery/httpx/cmd/httpx@latest
+github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+
+# Tomnomnom tools
+github.com/tomnomnom/assetfinder@latest
+github.com/tomnomnom/waybackurls@latest
+github.com/tomnomnom/gf@latest
+github.com/tomnomnom/anew@latest
+github.com/tomnomnom/gron@latest
+github.com/tomnomnom/unew@latest
+
+# Fuzzing / Content Discovery
+github.com/ffuf/ffuf/v2@latest
+github.com/OJ/gobuster/v3@latest
+
+# Secrets / Sensitive Data
+github.com/trufflesecurity/trufflehog/v3@latest
+github.com/zricethezav/gitleaks/v8@latest
+
+# Screenshots / Visual
+github.com/sensepost/gowitness@latest
+
+# Parameter Discovery
+github.com/hahwul/dalfox/v2@latest
+
+# DNS brute force helpers
+github.com/blechschmidt/massdns@latest
+
+# Utility
+github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+github.com/projectdiscovery/alterx/cmd/alterx@latest
+github.com/projectdiscovery/mapcidr/cmd/mapcidr@latest
+github.com/projectdiscovery/notify/cmd/notify@latest
+github.com/projectdiscovery/chaos-client/cmd/chaos@latest
+
+# --- NEW: Visual Recon (Feroxbuster recursive + screenshots) ---
+github.com/epi052/feroxbuster@latest
+
+# --- NEW: Subdomain Takeover (battle-tested) ---
+github.com/haccer/subjack@latest
+github.com/LukaSikic/subzy@latest
+
+# --- NEW: API / GraphQL ---
+github.com/projectdiscovery/kiterunner/cmd/kr@latest
+
+# --- NEW: Supply Chain / SBOM ---
+github.com/anchore/grype/cmd/grype@latest
+github.com/anchore/syft/cmd/syft@latest
+
+# --- NEW: WebSocket Recon ---
+github.com/nccgroup/wsrecon@latest
+
+# --- NEW: Cloud Recon (Go-based) ---
+github.com/trufflesecurity/trufflehog/v3@latest  # also finds cloud keys
+# cloud_enum is Python-only
+
+# ------------------------------------------------------------
+# SECTION 3: PYTHON PACKAGES (pip3 install --user)
+# ------------------------------------------------------------
+# Parameter discovery
+arjun
+paramspider
+
+# Recon / OSINT
+dnsgen sublist3r theharvester
+
+# Vulnerability scanning
+ghauri tplmap shodan
+dalfox  # also available as go module above
+
+# URL/JS analysis
+linkfinder js-beautifier
+jsluice  # NEW: superior JS endpoint/secret extraction
+mantra   # NEW: JS analysis framework
+
+# --- NEW: AuthZ / IDOR Automation ---
+authmatrix  # NEW: Broken Object Level Auth (BOLA) testing
+autorize    # NEW: Auto authorization testing
+
+# --- NEW: CMS Scanners ---
+droopescan
+cmsmap
+
+# --- NEW: Cloud Recon ---
+cloud_enum
+prowler
+
+# --- NEW: JWT Attacks ---
+jwt_tool  # pip install git+https://github.com/ticarpi/jwt_tool.git
+
+# ------------------------------------------------------------
+# SECTION 4: MANUAL / SPECIAL INSTALLS
+# ------------------------------------------------------------
+
+# nuclei templates (MANDATORY - CVE engine)
+# Run: nuclei -update-templates -ud ~/.local/share/nuclei-templates
+# Size: ~670MB, downloads 10,000+ templates
+
+# libpostal data (for amass on Debian/Kali)
+# The /usr/bin/amass wrapper requires this or it sudo-prompts every scan
+# Provision once:
+#   mkdir -p /var/lib/libpostal
+#   sudo libpostal_data download all /var/lib/libpostal
+#   mkdir -p /usr/share/libpostal
+#   ln -sf /var/lib/libpostal/transliteration /usr/share/libpostal/transliteration
+
+# Resolvers (for massdns/dnsx/shuffledns)
+# Auto-downloaded by HuntOps installer to: config/resolvers.txt
+# Source: https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt
+
+# testssl.sh (TLS/SSL scanner)
+# Fixed path expected: /home/mazin/tools/testssl_tool/testssl.sh
+# Install:
+#   git clone --depth 1 https://github.com/drwetter/testssl.sh.git /home/mazin/tools/testssl_tool
+
+# SecLists wordlists (if not via apt)
+# git clone https://github.com/danielmiessler/SecLists.git /usr/share/seclists
+
+# --- NEW: Aquatone (visual recon - Go binary) ---
+# Install:
+#   go install github.com/michenriksen/aquatone@latest
+#   # OR download release: https://github.com/michenriksen/aquatone/releases
+
+# --- NEW: gowitness (already in Go modules above) ---
+# github.com/sensepost/gowitness@latest
+
+# --- NEW: Subjack (subdomain takeover) ---
+# Install:
+#   go install github.com/haccer/subjack@latest
+#   # Download fingerprints: wget -O ~/.subjack/fingerprints.json https://raw.githubusercontent.com/haccer/subjack/master/fingerprints.json
+
+# --- NEW: Subzy (subdomain takeover) ---
+# Install:
+#   go install github.com/LukaSikic/subzy@latest
+
+# --- NEW: jwt_tool (Python, complex install) ---
+# Install:
+#   git clone https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool
+#   pip3 install -r /opt/jwt_tool/requirements.txt
+#   alias jwt_tool='python3 /opt/jwt_tool/jwt_tool.py'
+
+# --- NEW: graphw00f (GraphQL fingerprinting) ---
+# Install:
+#   pip3 install git+https://github.com/dolevf/graphw00f.git
+
+# --- NEW: race-the-web / Turbo Intruder (Burp extension) ---
+# Install via Burp Suite: Extender → BApp Store → Turbo Intruder
+# For headless: use race-the-web CLI (Python)
+#   pip3 install race-the-web
+
+# --- NEW: grype / syft (already in Go modules above) ---
+# github.com/anchore/grype/cmd/grype@latest
+# github.com/anchore/syft/cmd/syft@latest
+
+# --- NEW: kiterunner (API endpoint discovery) ---
+# github.com/projectdiscovery/kiterunner/cmd/kr@latest
+
+# --- NEW: wsrecon (WebSocket recon) ---
+# github.com/nccgroup/wsrecon@latest
+
+# --- NEW: authmatrix / autorize (Burp extensions) ---
+# Install via Burp Suite: Extender → BApp Store
+# For headless: limited support, use Python alternatives
+
+# ------------------------------------------------------------
+# SECTION 5: PYTHON DEV DEPENDENCIES (for CI/testing)
+# Install: pip install -r requirements.txt
+# ------------------------------------------------------------
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# HTTP / API testing
+requests==2.31.0
+httpx==0.25.2
+
+# Configuration
+pyyaml==6.0.1
+python-dotenv==1.0.0
+
+# Code Quality (optional)
+black==23.12.0
+flake8==6.1.0
+pylint==3.0.3
+mypy==1.7.1
+pre-commit==3.5.0
+
+# ------------------------------------------------------------
+# SECTION 6: VERIFICATION CHECKLIST
+# After install, run these to verify:
+# ------------------------------------------------------------
+#   # Core
+#   which jq curl dig nmap masscan
+#
+#   # Go tools (should be in $HOME/go/bin)
+#   which dnsx naabu httpx nuclei subfinder assetfinder waybackurls gau ffuf gobuster gowitness trufflehog gitleaks katana shuffledns chaos dalfox
+#
+#   # Python tools
+#   python3 -c "import arjun dnsgen sublist3r ghauri tplmap shodan"
+#
+#   # Nuclei templates
+#   ls ~/.local/share/nuclei-templates/*.yaml | wc -l  # should be > 1000
+#
+#   # testssl.sh
+#   ls /home/mazin/tools/testssl_tool/testssl.sh
+#
+#   # Wordlists
+#   ls /usr/share/seclists/Discovery/DNS/
+#   ls /usr/share/seclists/Discovery/Web-Content/
+#
+#   # Resolvers
+#   wc -l config/resolvers.txt  # should be > 1000
+#
+#   # libpostal (for amass)
+#   ls /usr/share/libpostal/transliteration
+#
+# ------------------------------------------------------------
+# SECTION 7: KALI-SPECIFIC NOTES
+# ------------------------------------------------------------
+# On Kali Linux, some tools have different names:
+#   httpx        → httpx-toolkit (package: golang-github-projectdiscovery-httpx)
+#   gau          → git alias! Real binary at ~/go/bin/gau (install via go)
+#   amass        → Debian wrapper that sudo-prompts for libpostal data
+#
+# The installers handle these quirks automatically.
+#
+# ------------------------------------------------------------
+# SECTION 8: API KEYS (Optional - for extended coverage)
+# ------------------------------------------------------------
+# Export these in your shell profile (~/.bashrc, ~/.zshrc):
+#   export VT_API_KEY="your_virustotal_key"        # https://virustotal.com
+#   export ST_API_KEY="your_securitytrails_key"    # https://securitytrails.com
+#   export CERTSPOTTER_API_KEY="your_key"          # https://certspotter.com
+#   export ESCAPE_API_KEY="your_key"               # https://escape.tech
+#   export INVICTI_API_KEY="your_key"              # https://invicti.com
+#   export ZEROPATH_API_KEY="your_key"             # https://zeropath.com
+#   export ACUNETIX_API_KEY="your_key"             # https://acunetix.com
+#   export BURP_API_KEY="your_key"                 # Burp Suite API
+#   export SHODAN_API_KEY="your_key"               # https://shodan.io
+#   export CHAOS_API_KEY="your_key"                # https://chaos.projectdiscovery.io
+#
+# All scanners work WITHOUT keys (graceful degradation).
+# Keys only expand subdomain/VULN coverage.
+
+# ------------------------------------------------------------
+# GENERATED: 2026-08-19
+# PROJECT: OMNIROUTE-TEST/Bug-stealer
+# ------------------------------------------------------------

@@ -1,0 +1,166 @@
+# =============================================================================
+# Bug Bounty Recon + Vulnerability Scanner — .gitignore
+# =============================================================================
+# This repository contains two independent scanners:
+# 1. D3fault-death.sh — monolithic bash pipeline (~2350 lines)
+# 2. huntops/ — modular CLI + lib/*.sh phases with tmux live windows
+# 3. omni.sh — unified entry point integrating both
+#
+# Excludes: build artifacts, scan outputs, logs, binaries, sensitive data
+# Keeps:  source code, configs, documentation, tests, wordlists
+#
+# NOTE: In gitignore, '#' only starts a comment at the START of a line.
+# Never put a trailing '# comment' after a pattern — it corrupts the pattern.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Scan Outputs & Artifacts (the largest dirs — never commit these)
+# -----------------------------------------------------------------------------
+output/
+huntops/output/
+
+# D3fault-death scan directories (root level)
+death_*/
+# D3fault-death scan directories (any level)
+**/death_*/
+# D3fault-death log files
+**/death_*.log
+
+# -----------------------------------------------------------------------------
+# Private OSINT investigation reports (never commit these)
+# -----------------------------------------------------------------------------
+osint-report-*.md
+numrecon-*.md
+
+# Development stub — not part of the toolkit
+gen2.sh
+
+# -----------------------------------------------------------------------------
+# Compiled Binaries & Build Artifacts
+# -----------------------------------------------------------------------------
+# Go binary (~14MB)
+d3fault-death/d3fault-death
+d3fault-death/cmd/d3fault-death/
+*.exe
+*.bin
+
+# -----------------------------------------------------------------------------
+# Go Build Cache & Module Cache
+# -----------------------------------------------------------------------------
+d3fault-death/go.sum
+d3fault-death/go.mod
+d3fault-death/internal/
+
+# -----------------------------------------------------------------------------
+# Python Virtual Environments & Cache
+# -----------------------------------------------------------------------------
+sentinel-env/
+venv/
+env/
+*.pyc
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# -----------------------------------------------------------------------------
+# Logs & Temporary Files
+# -----------------------------------------------------------------------------
+logs/
+*.log
+*.verbose.log
+*.debug.log
+/tmp/lt4/
+/tmp/death_*/
+*.tmp
+*.swp
+*~
+
+# -----------------------------------------------------------------------------
+# IDE & Editor Files
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+.claude/
+*.sublime-*
+.project
+.classpath
+
+# -----------------------------------------------------------------------------
+# OS Generated Files
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# -----------------------------------------------------------------------------
+# Sensitive Data & Credentials (NEVER commit these)
+# -----------------------------------------------------------------------------
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+*.env
+.env.local
+.env.*.local
+
+# Optional API keys — keep local only
+config/keys.conf
+huntops/config/keys.conf
+secrets/
+*.secret
+
+# -----------------------------------------------------------------------------
+# Test Fixtures & Cache (generated during test runs)
+# -----------------------------------------------------------------------------
+tests/fixtures/
+.tmp/
+.cache/
+
+# -----------------------------------------------------------------------------
+# Documentation Build Output
+# -----------------------------------------------------------------------------
+docs/_build/
+site/
+
+# -----------------------------------------------------------------------------
+# Package Manager Files
+# -----------------------------------------------------------------------------
+node_modules/
+package-lock.json
+yarn.lock
+go.sum
+
+# -----------------------------------------------------------------------------
+# Backup & Archive Files
+# -----------------------------------------------------------------------------
+*.bak
+*.backup
+*.tar.gz
+*.zip
+*.rar
+
+# =============================================================================
+# KEEP THESE (do NOT ignore):
+# =============================================================================
+# *.sh              — All shell scripts
+# *.md              — All markdown documentation
+# *.conf / *.yaml   — Configuration files
+# *.txt             — Wordlists, data files, requirements
+# *.sql             — Database schemas
+# config/           — Configuration directory
+# huntops/config/   — HuntOps configuration
+# huntops/data/     — Wordlists & data files
+# huntops/lib/      — HuntOps library modules
+# huntops/tests/    — HuntOps test suite
+# lib/              — OMNI shared libraries
+# tests/            — Integration tests
+# .claude/          — Claude Code settings (project-specific)
+# =============================================================================
