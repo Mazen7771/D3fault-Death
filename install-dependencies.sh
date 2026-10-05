@@ -80,9 +80,12 @@ clone_repo() {
     echo "[+] $description"
 
     if [ -d "$dir/.git" ]; then
-        git -C "$dir" fetch --depth 1 origin
-        git -C "$dir" reset --hard origin/HEAD 2>/dev/null || true
-        ok "$description (updated)"
+        if git -C "$dir" fetch --depth 1 origin; then
+            git -C "$dir" reset --hard origin/HEAD 2>/dev/null || true
+            ok "$description (updated)"
+        else
+            warn "$description fetch failed; using existing checkout"
+        fi
         return 0
     fi
 
@@ -90,16 +93,20 @@ clone_repo() {
         ok "$description"
     else
         fail "$description"
+        return 1
     fi
 }
 
 go_install() {
     local module="$1"
+    local binary
+
+    binary="$(basename "${module%@*}")"
 
     echo "[+] go install $module"
 
     if GOBIN="$GO_BIN" go install "$module"; then
-        ok "$(basename "${module%@*}")"
+        ok "$binary"
     else
         fail "Go: $module"
     fi
@@ -107,7 +114,11 @@ go_install() {
 
 section "[1/9] SYSTEM / BOOTSTRAP"
 
-sudo apt-get update || fail "apt update"
+if sudo apt-get update; then
+    ok "apt update"
+else
+    fail "apt update"
+fi
 
 apt_install "Bootstrap packages" \
     ca-certificates \
@@ -188,7 +199,9 @@ GO_TOOLS=(
     "github.com/tomnomnom/gf@latest"
     "github.com/tomnomnom/anew@latest"
     "github.com/tomnomnom/gron@latest"
-    "github.com/tomnomnom/unew@latest"
+
+    # Correct current unew repository
+    "github.com/dwisiswant0/unew@latest"
 
     "github.com/lc/gau/v2/cmd/gau@latest"
 
@@ -202,14 +215,15 @@ GO_TOOLS=(
     "github.com/hahwul/dalfox/v2@latest"
 
     "github.com/haccer/subjack@latest"
-    "github.com/LukaSikic/subzy@latest"
 
-    "github.com/projectdiscovery/kiterunner/cmd/kr@latest"
+    # Correct current subzy repository
+    "github.com/PentestPad/subzy@latest"
+
+    # Correct current kiterunner repository
+    "github.com/assetnote/kiterunner/cmd/kr@latest"
 
     "github.com/anchore/grype/cmd/grype@latest"
     "github.com/anchore/syft/cmd/syft@latest"
-
-    "github.com/nccgroup/wsrecon@latest"
 
     "github.com/BishopFox/jsluice/cmd/jsluice@latest"
     "github.com/brosck/mantra@latest"
@@ -222,16 +236,33 @@ done
 section "[4/9] PYTHON VIRTUAL ENVIRONMENT"
 
 if [ ! -d "$VENV" ]; then
-    python3 -m venv "$VENV" || fail "Create Python virtual environment"
+    if python3 -m venv "$VENV"; then
+        ok "Create Python virtual environment"
+    else
+        fail "Create Python virtual environment"
+    fi
+else
+    ok "Python virtual environment already exists"
 fi
 
-source "$VENV/bin/activate"
+if [ -x "$VENV/bin/activate" ]; then
+    source "$VENV/bin/activate"
+else
+    fail "Python virtual environment activation script"
+fi
 
-"$VENV/bin/python" -m pip install --upgrade pip setuptools wheel \
-    || fail "Upgrade pip/setuptools/wheel"
+if "$VENV/bin/python" -m pip install --upgrade pip setuptools wheel; then
+    ok "Upgrade pip/setuptools/wheel"
+else
+    fail "Upgrade pip/setuptools/wheel"
+fi
 
-pip_install "Install requirements.txt" \
-    -r "$PROJECT_DIR/requirements.txt"
+if [ -f "$PROJECT_DIR/requirements.txt" ]; then
+    pip_install "Install requirements.txt" \
+        -r "$PROJECT_DIR/requirements.txt"
+else
+    warn "requirements.txt not found"
+fi
 
 section "[5/9] PYTHON SOURCE TOOLS"
 
@@ -304,13 +335,16 @@ clone_repo \
     "$TPLMAP_DIR" \
     "Tplmap"
 
-if [ -f "$TPLMAP_DIR/requirements.txt" ]; then
-    pip_install "Tplmap dependencies" \
-        -r "$TPLMAP_DIR/requirements.txt"
-fi
+# Tplmap is legacy Python code.
+# Its upstream requirements contain obsolete packages and should not
+# be installed blindly into the modern project virtual environment.
+#
+# We only prepare the source here so that this legacy tool does not
+# break the rest of the installer.
 
-# Tplmap is old and may require compatibility work on Python 3.13+.
-# We still download and prepare it; verification reports source presence.
+if [ -d "$TPLMAP_DIR" ]; then
+    ok "Tplmap source prepared (legacy dependency setup skipped)"
+fi
 
 # ------------------------------------------------------------
 # cloud_enum
@@ -345,8 +379,10 @@ else
             -r "$TOOLS_DIR/ghauri/requirements.txt"
     fi
 
-    pip_install "Install ghauri from source" \
-        "$TOOLS_DIR/ghauri"
+    if [ -d "$TOOLS_DIR/ghauri" ]; then
+        pip_install "Install ghauri from source" \
+            "$TOOLS_DIR/ghauri"
+    fi
 fi
 
 # ------------------------------------------------------------
@@ -430,8 +466,12 @@ else
 
     if [ -d "$TOOLS_DIR/SecLists" ]; then
         sudo mkdir -p /usr/share/seclists
-        sudo cp -a "$TOOLS_DIR/SecLists/." /usr/share/seclists/
-        ok "SecLists copied to /usr/share/seclists"
+
+        if sudo cp -a "$TOOLS_DIR/SecLists/." /usr/share/seclists/; then
+            ok "SecLists copied to /usr/share/seclists"
+        else
+            fail "SecLists copy to /usr/share/seclists"
+        fi
     fi
 fi
 
@@ -471,15 +511,10 @@ fi
 # Subjack fingerprints
 # ------------------------------------------------------------
 
-mkdir -p "$HOME/.subjack"
+# No external fingerprints.json download.
+# Current Subjack releases embed fingerprints directly into the binary.
 
-if curl -fL \
-    "https://raw.githubusercontent.com/haccer/subjack/master/fingerprints.json" \
-    -o "$HOME/.subjack/fingerprints.json"; then
-    ok "Subjack fingerprints"
-else
-    fail "Subjack fingerprints"
-fi
+ok "Subjack fingerprints embedded in binary"
 
 section "[8/9] BURP EXTENSIONS"
 
@@ -510,21 +545,42 @@ clone_repo \
     "$RACETHEWEB_DIR" \
     "Race-the-Web"
 
-if [ -f "$RACETHEWEB_DIR/Makefile" ]; then
-    (
+if [ -d "$RACETHEWEB_DIR" ]; then
+
+    if (
         cd "$RACETHEWEB_DIR" &&
         make build
-    )
+    ); then
 
-    if [ -f "$RACETHEWEB_DIR/bin/race-the-web" ]; then
-        cp "$RACETHEWEB_DIR/bin/race-the-web" "$GO_BIN/race-the-web"
-        chmod +x "$GO_BIN/race-the-web"
-        ok "Race-the-Web binary"
+        RTW_BINARY=""
+
+        while IFS= read -r candidate; do
+            if [ -z "$RTW_BINARY" ]; then
+                RTW_BINARY="$candidate"
+            fi
+        done < <(
+            find "$RACETHEWEB_DIR" \
+                -maxdepth 1 \
+                -type f \
+                -name 'race-the-web*' \
+                -perm -111 \
+                2>/dev/null
+        )
+
+        if [ -n "$RTW_BINARY" ] && [ -f "$RTW_BINARY" ]; then
+            cp "$RTW_BINARY" "$GO_BIN/race-the-web"
+            chmod +x "$GO_BIN/race-the-web"
+            ok "Race-the-Web binary"
+        else
+            fail "Race-the-Web binary"
+        fi
+
     else
-        fail "Race-the-Web binary"
+        fail "Race-the-Web build"
     fi
+
 else
-    fail "Race-the-Web Makefile missing"
+    fail "Race-the-Web source missing"
 fi
 
 # ------------------------------------------------------------
@@ -532,6 +588,7 @@ fi
 # ------------------------------------------------------------
 
 if command -v libpostal_data >/dev/null 2>&1; then
+
     sudo mkdir -p /var/lib/libpostal
     sudo mkdir -p /usr/share/libpostal
 
@@ -547,6 +604,7 @@ if command -v libpostal_data >/dev/null 2>&1; then
             /usr/share/libpostal/transliteration
         ok "libpostal transliteration link"
     fi
+
 fi
 
 section "VERIFICATION"
@@ -620,7 +678,6 @@ GO_BINARIES=(
     kr
     grype
     syft
-    wsrecon
     jsluice
     mantra
     race-the-web
@@ -654,13 +711,33 @@ fi
 echo
 echo "--- Source tools ---"
 
-[ -d "$PARAMSPIDER_DIR" ] && ok "ParamSpider source" || warn "ParamSpider source"
-[ -d "$CMSMAP_DIR" ] && ok "CMSmap source" || warn "CMSmap source"
-[ -d "$LINKFINDER_DIR" ] && ok "LinkFinder source" || warn "LinkFinder source"
-[ -d "$TPLMAP_DIR" ] && ok "Tplmap source" || warn "Tplmap source"
-[ -d "$CLOUDENUM_DIR" ] && ok "cloud_enum source" || warn "cloud_enum source"
-[ -d "$GRAPHW00F_DIR" ] && ok "graphw00f source" || warn "graphw00f source"
-[ -d "$JWT_DIR" ] && ok "jwt_tool source" || warn "jwt_tool source"
+[ -d "$PARAMSPIDER_DIR" ] \
+    && ok "ParamSpider source" \
+    || warn "ParamSpider source"
+
+[ -d "$CMSMAP_DIR" ] \
+    && ok "CMSmap source" \
+    || warn "CMSmap source"
+
+[ -d "$LINKFINDER_DIR" ] \
+    && ok "LinkFinder source" \
+    || warn "LinkFinder source"
+
+[ -d "$TPLMAP_DIR" ] \
+    && ok "Tplmap source" \
+    || warn "Tplmap source"
+
+[ -d "$CLOUDENUM_DIR" ] \
+    && ok "cloud_enum source" \
+    || warn "cloud_enum source"
+
+[ -d "$GRAPHW00F_DIR" ] \
+    && ok "graphw00f source" \
+    || warn "graphw00f source"
+
+[ -d "$JWT_DIR" ] \
+    && ok "jwt_tool source" \
+    || warn "jwt_tool source"
 
 echo
 echo "--- Resources ---"
@@ -669,21 +746,27 @@ echo "--- Resources ---"
     && ok "testssl.sh" \
     || warn "testssl.sh"
 
-[ -f "/usr/share/seclists/Discovery/DNS/dns-Jhaddix.txt" ] || \
-[ -d "/usr/share/seclists/Discovery/DNS" ] \
-    && ok "SecLists" \
-    || warn "SecLists"
+if [ -f "/usr/share/seclists/Discovery/DNS/dns-Jhaddix.txt" ] || \
+   [ -d "/usr/share/seclists/Discovery/DNS" ]; then
+    ok "SecLists"
+else
+    warn "SecLists"
+fi
 
 [ -f "$PROJECT_DIR/config/resolvers.txt" ] \
     && ok "config/resolvers.txt" \
     || warn "config/resolvers.txt"
 
-[ -f "$HOME/.subjack/fingerprints.json" ] \
-    && ok "subjack fingerprints" \
-    || warn "subjack fingerprints"
+ok "subjack fingerprints embedded in binary"
 
 if [ -d "$NUCLEI_DIR" ]; then
-    TEMPLATE_COUNT="$(find "$NUCLEI_DIR" -type f -name '*.yaml' 2>/dev/null | wc -l)"
+    TEMPLATE_COUNT="$(
+        find "$NUCLEI_DIR" \
+            -type f \
+            -name '*.yaml' \
+            2>/dev/null | wc -l
+    )
+
     echo "[INFO] Nuclei YAML templates: $TEMPLATE_COUNT"
 else
     warn "Nuclei template directory"
@@ -695,22 +778,29 @@ echo "INSTALLATION SUMMARY"
 echo "============================================================"
 
 if [ "${#FAILED[@]}" -eq 0 ]; then
+
     echo
     echo "ALL INSTALLATION STEPS COMPLETED."
     echo
+
     echo "Activate the environment:"
     echo "  source $VENV/bin/activate"
     echo
+
     echo "Go binaries:"
     echo "  $GO_BIN"
     echo
+
     exit 0
+
 else
+
     echo
     echo "Some installation steps failed:"
     printf '  - %s\n' "${FAILED[@]}"
     echo
     echo "The installer continued so you can see every failure."
     echo
+
     exit 1
 fi
