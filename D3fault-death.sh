@@ -48,6 +48,21 @@ set -u   # error on undefined variables (no -e: recon tools fail a lot)
 #------------------------------------------------------------------------------
 # Global configuration
 #------------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# FIX: omni.conf was never sourced anywhere in this script, so every
+# OMNI_* setting and back-compat alias (WLD_DNS, RESOLVERS, HARVESTER_SOURCES,
+# TAKEOVER_PROVIDERS, rate limits, etc.) it defines was dead configuration.
+# Source it, best-effort, from the places it's likely to live.
+for __omni_conf in "$SCRIPT_DIR/omni.conf" "$SCRIPT_DIR/config/omni.conf" "$SCRIPT_DIR/../omni.conf"; do
+    if [ -r "$__omni_conf" ]; then
+        # shellcheck disable=SC1090
+        source "$__omni_conf"
+        break
+    fi
+done
+unset __omni_conf
+
 VERSION="2.0.0"
 AUTHOR="ZOLDEK"
 GITHUB="https://github.com/Mazen7771"
@@ -78,12 +93,33 @@ WATCH_DIR=""
 TEST_ACCOUNT=""
 
 # Wordlists (best-effort)
-WLD_DNS="/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
-WLD_WEB="/usr/share/wordlists/dirb/common.txt"
-WLD_WEB2="/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt"
+# FIX: these used to be unconditional assignments, so even when omni.conf
+# (sourced above) or the environment set WLD_DNS/WLD_WEB first, this
+# immediately clobbered them with the hardcoded defaults. Now they only
+# fill in a default when nothing already set one.
+WLD_DNS="${WLD_DNS:-/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt}"
+WLD_WEB="${WLD_WEB:-/usr/share/wordlists/dirb/common.txt}"
+WLD_WEB2="${WLD_WEB2:-/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt}"
+
+# FIX: resolvers-fast.txt / resolvers.txt were never referenced anywhere in
+# this script (not even by filename) -- phase_resolve() only ever used
+# whatever resolver /etc/resolv.conf happened to point to, so both uploaded
+# resolver lists did nothing. Locate the best available list now so
+# phase_resolve() can actually use it (see that function below).
+RESOLVERS_FILE=""
+for __resolvers_candidate in \
+    "${OMNI_RESOLVERS_FAST:-}" "${RESOLVERS:-}" \
+    "$SCRIPT_DIR/resolvers-fast.txt" "$SCRIPT_DIR/config/resolvers-fast.txt" \
+    "$SCRIPT_DIR/resolvers.txt" "$SCRIPT_DIR/config/resolvers.txt"; do
+    if [ -n "$__resolvers_candidate" ] && [ -r "$__resolvers_candidate" ]; then
+        RESOLVERS_FILE="$__resolvers_candidate"
+        break
+    fi
+done
+unset __resolvers_candidate
 
 # theHarvester passive sources (curated subset - "all" is too slow)
-HARVESTER_SOURCES="crtsh,dnsdumpster,duckduckgo,hackertarget,otx,rapiddns,urlscan,bing,google"
+HARVESTER_SOURCES="${HARVESTER_SOURCES:-crtsh,dnsdumpster,duckduckgo,hackertarget,otx,rapiddns,urlscan,bing,google}"
 
 # Parallelism / depth (override via environment)
 RESOLVE_PARALLEL="${RESOLVE_PARALLEL:-50}"
@@ -808,9 +844,20 @@ install_deps() {
 #------------------------------------------------------------------------------
 derive_root() {
     local d="$1"
+    # FIX: this hardcoded ccTLD list was missing a lot of common second-level
+    # ccTLDs (notably .com.my/.net.my/.org.my -- a "something.com.my" target
+    # used to get chopped down to the wrong root "com.my" instead of
+    # "something.com.my", which then fed wrong values into scope matching).
+    # Added the common Malaysia/SEA ones plus a few other widely-used ones
+    # that were missing. This is still a hardcoded list, not a public-suffix
+    # lookup, so an uncommon ccTLD can still be misclassified -- consider
+    # `publicsuffix`/`tldextract` if that matters for your targets.
     case "$d" in
         *.co.uk|*.org.uk|*.gov.uk|*.ac.uk|*.com.au|*.co.jp|*.com.br|*.co.in|\
-        *.co.za|*.com.mx|*.com.tr|*.com.ar|*.com.pe|*.com.co)
+        *.co.za|*.com.mx|*.com.tr|*.com.ar|*.com.pe|*.com.co|\
+        *.com.my|*.net.my|*.org.my|*.gov.my|*.edu.my|\
+        *.com.sg|*.com.hk|*.com.cn|*.co.id|*.co.th|*.co.kr|*.co.nz|\
+        *.com.tw|*.com.vn|*.com.ph|*.co.il|*.com.pk|*.co.ke|*.com.eg)
             echo "$d" | awk -F. '{print $(NF-2)"."$(NF-1)"."$NF}'
             ;;
         *)  echo "$d" | awk -F. '{print $(NF-1)"."$NF}' ;;
@@ -1103,10 +1150,32 @@ phase_resolve() {
         warn "Scope has $(wc -l < "$S/scope.txt") hostnames; resolving only the $MAX_RESOLVE shortest"
     fi
     log "resolving (xargs -P $RESOLVE_PARALLEL)"
-    vlog "dig +short (A) each host, $RESOLVE_PARALLEL parallel"
-    awk '{print length"\t"$0}' "$S/scope.txt" | sort -n | cut -f2- | head -n "$MAX_RESOLVE" \
-        | xargs -P "$RESOLVE_PARALLEL" -I{} bash -c 'host="{}"; ip=$(dig +time=2 +tries=1 +short "$host" 2>/dev/null | grep -E "^[0-9]{1,3}(\.[0-9]{1,3}){3}$" | head -1); [ -n "$ip" ] && printf "%s -> %s\n" "$host" "$ip"' \
-        | sort -u > "$S/resolved.txt" 2>/dev/null || true
+    # FIX: resolvers-fast.txt / resolvers.txt were never wired into this
+    # script -- resolution always went through whatever resolver
+    # /etc/resolv.conf pointed to, regardless of which (if either) list was
+    # found. When RESOLVERS_FILE was located at startup, pick a resolver
+    # from it per host (dig @<resolver>), falling back to the system
+    # resolver if that resolver doesn't answer.
+    if [ -n "$RESOLVERS_FILE" ]; then
+        vlog "dig @<resolver from $RESOLVERS_FILE> +short (A) each host, $RESOLVE_PARALLEL parallel"
+        ok "Using custom resolver list: $RESOLVERS_FILE ($(count_lines "$RESOLVERS_FILE") resolvers)"
+        export RESOLVERS_FILE
+        awk '{print length"\t"$0}' "$S/scope.txt" | sort -n | cut -f2- | head -n "$MAX_RESOLVE" \
+            | xargs -P "$RESOLVE_PARALLEL" -I{} bash -c '
+                host="{}"
+                resolver=$(shuf -n 1 "$RESOLVERS_FILE" 2>/dev/null)
+                ip=""
+                [ -n "$resolver" ] && ip=$(dig @"$resolver" +time=2 +tries=1 +short "$host" 2>/dev/null | grep -E "^[0-9]{1,3}(\.[0-9]{1,3}){3}$" | head -1)
+                [ -z "$ip" ] && ip=$(dig +time=2 +tries=1 +short "$host" 2>/dev/null | grep -E "^[0-9]{1,3}(\.[0-9]{1,3}){3}$" | head -1)
+                [ -n "$ip" ] && printf "%s -> %s\n" "$host" "$ip"
+            ' \
+            | sort -u > "$S/resolved.txt" 2>/dev/null || true
+    else
+        vlog "dig +short (A) each host, $RESOLVE_PARALLEL parallel (no resolver list found -- using system resolver)"
+        awk '{print length"\t"$0}' "$S/scope.txt" | sort -n | cut -f2- | head -n "$MAX_RESOLVE" \
+            | xargs -P "$RESOLVE_PARALLEL" -I{} bash -c 'host="{}"; ip=$(dig +time=2 +tries=1 +short "$host" 2>/dev/null | grep -E "^[0-9]{1,3}(\.[0-9]{1,3}){3}$" | head -1); [ -n "$ip" ] && printf "%s -> %s\n" "$host" "$ip"' \
+            | sort -u > "$S/resolved.txt" 2>/dev/null || true
+    fi
     awk -F' -> ' '{print $1}' "$S/resolved.txt" > "$S/resolved-hosts.txt" 2>/dev/null
     ok "Resolved $(count_lines "$S/resolved.txt") hostnames -> $S/resolved.txt"
 }
@@ -1256,30 +1325,29 @@ phase_cve_intel() {
 
     # Source all CVE intelligence modules
     local lib_dir="$(dirname "${BASH_SOURCE[0]}")/lib"
-    if [ -f "$lib_dir/cve_cache.sh" ]; then
-        source "$lib_dir/cve_cache.sh"
+    # FIX: every one of these `source` calls was individually guarded with
+    # `[ -f ... ]`, so if lib/cve_*.sh simply didn't exist (nothing in the
+    # five files you gave me ships them), every source was silently skipped,
+    # cve_cache_init/cve_kev_fetch/etc. below were never defined, and the
+    # phase still logged "CVE Intelligence complete" -- with no indication
+    # the whole engine had done nothing. Track how many modules actually
+    # loaded and bail loudly if it's zero, instead of pretending success.
+    local __cve_modules_loaded=0
+    for __cve_mod in cve_cache cve_nvd cve_kev cve_exploitdb cve_github cve_vendor cve_cpe cve_prioritize; do
+        if [ -f "$lib_dir/${__cve_mod}.sh" ]; then
+            # shellcheck disable=SC1090
+            source "$lib_dir/${__cve_mod}.sh"
+            __cve_modules_loaded=$((__cve_modules_loaded + 1))
+        fi
+    done
+    unset __cve_mod
+
+    if [ "$__cve_modules_loaded" -eq 0 ]; then
+        err "CVE Intelligence Engine: none of lib/cve_*.sh found under $lib_dir -- skipping this phase entirely (it would otherwise silently do nothing and still report success)."
+        unset __cve_modules_loaded
+        return 1
     fi
-    if [ -f "$lib_dir/cve_nvd.sh" ]; then
-        source "$lib_dir/cve_nvd.sh"
-    fi
-    if [ -f "$lib_dir/cve_kev.sh" ]; then
-        source "$lib_dir/cve_kev.sh"
-    fi
-    if [ -f "$lib_dir/cve_exploitdb.sh" ]; then
-        source "$lib_dir/cve_exploitdb.sh"
-    fi
-    if [ -f "$lib_dir/cve_github.sh" ]; then
-        source "$lib_dir/cve_github.sh"
-    fi
-    if [ -f "$lib_dir/cve_vendor.sh" ]; then
-        source "$lib_dir/cve_vendor.sh"
-    fi
-    if [ -f "$lib_dir/cve_cpe.sh" ]; then
-        source "$lib_dir/cve_cpe.sh"
-    fi
-    if [ -f "$lib_dir/cve_prioritize.sh" ]; then
-        source "$lib_dir/cve_prioritize.sh"
-    fi
+    unset __cve_modules_loaded
 
     # Initialize cache
     cve_cache_init "$cache_dir"
@@ -1746,7 +1814,9 @@ phase_secrets() {
 #------------------------------------------------------------------------------
 # PHASE 11.6 — Subdomain takeover + exposure candidates
 #------------------------------------------------------------------------------
-TAKEOVER_PROVIDERS="github.io|herokuapp.com|herokudns.com|s3.amazonaws.com|cloudfront.net|azurewebsites.net|azureedge.net|blob.core.windows.net|cname.vercel-dns.com|netlify.app|shopify.com|zendesk.com|wordpress.com|fastly.net|pantheon.io|surge.sh|bitbucket.io|wpengine.com|tumblr.com|acquia-sites.com|usergarden.com|readme.io|ghproxy.com|ngrok.io"
+# FIX: was an unconditional assignment that would clobber TAKEOVER_PROVIDERS
+# if omni.conf (sourced above) or the environment had already set it.
+TAKEOVER_PROVIDERS="${TAKEOVER_PROVIDERS:-github.io|herokuapp.com|herokudns.com|s3.amazonaws.com|cloudfront.net|azurewebsites.net|azureedge.net|blob.core.windows.net|cname.vercel-dns.com|netlify.app|shopify.com|zendesk.com|wordpress.com|fastly.net|pantheon.io|surge.sh|bitbucket.io|wpengine.com|tumblr.com|acquia-sites.com|usergarden.com|readme.io|ghproxy.com|ngrok.io}"
 
 phase_takeover() {
     banner_phase "PHASE 11.6: Subdomain Takeover & Exposure Candidates"
