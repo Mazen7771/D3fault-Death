@@ -1,77 +1,356 @@
 #!/usr/bin/env bash
+#===============================================================================
+# install-dependencies.sh — Automated dependency installation for D3fault-Death
+#
+# Cross-platform installation script for penetration testing tools.
+# Supports: Debian/Ubuntu, Kali, Arch, AlmaLinux/CentOS/RHEL, Fedora, Alpine
+#
+# Usage: ./install-dependencies.sh
+#
+set -euo pipefail
 
-set -u
+# ----------------------------------------------------------------------
+# System Detection
+# ----------------------------------------------------------------------
+os_name=""
+os_version=""
+is_debian=0
+is_arch=0
+is_alma=0
+is_fedora=0
+is_kali=0
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$PROJECT_DIR"
+detect_os() {
+    if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        os_name="${ID:-}"
+        os_version="${VERSION_ID:-}"
 
-TOOLS_DIR="$HOME/tools"
-GO_BIN="$HOME/go/bin"
-VENV="$PROJECT_DIR/env"
+        case "${os_name}" in
+            debian|ubuntu)
+                is_debian=1
+                ;;
+            arch|manjaro|endeavouros)
+                is_arch=1
+                ;;
+            fedora)
+                is_fedora=1
+                ;;
+            almalinux|centos|rhel|rocky|almalinux)
+                is_alma=1
+                ;;
+            kali)
+                is_kali=1
+                ;;
+        esac
+    fi
 
-TESTSSL_DIR="$TOOLS_DIR/testssl_tool"
-JWT_DIR="$TOOLS_DIR/jwt_tool"
-PARAMSPIDER_DIR="$TOOLS_DIR/ParamSpider"
-CMSMAP_DIR="$TOOLS_DIR/CMSmap"
-LINKFINDER_DIR="$TOOLS_DIR/LinkFinder"
-TPLMAP_DIR="$TOOLS_DIR/tplmap"
-CLOUDENUM_DIR="$TOOLS_DIR/cloud_enum"
-GRAPHW00F_DIR="$TOOLS_DIR/graphw00f"
-RACETHEWEB_DIR="$TOOLS_DIR/race-the-web"
-BURP_DIR="$TOOLS_DIR/burp-extensions"
+    # Fall back to package manager detection
+    if [[ "$is_debian" -eq 0 ]] && [[ "$is_arch" -eq 0 ]]; then
+        if command -v rpm &>/dev/null 2>&1; then
+            # RHEL-based
+            if rpm -q almalinux-release &>/dev/null; then
+                is_alma=1
+                os_name="almalinux"
+            elif rpm -q centos-release &>/dev/null; then
+                is_alma=1
+                os_name="centos"
+            fi
+        fi
+    fi
 
-NUCLEI_DIR="$HOME/.local/share/nuclei-templates"
-
-export PATH="$GO_BIN:$VENV/bin:$PATH"
-
-FAILED=()
-
-ok() {
-    printf '\033[1;32m[OK]\033[0m %s\n' "$1"
+    log "info" "Detected OS: ${os_name:-unknown} ${os_version:-unknown}"
 }
 
-warn() {
-    printf '\033[1;33m[WARN]\033[0m %s\n' "$1"
-}
-
-fail() {
-    printf '\033[1;31m[FAILED]\033[0m %s\n' "$1"
-    FAILED+=("$1")
-}
-
-section() {
-    echo
-    echo "============================================================"
-    echo "$1"
-    echo "============================================================"
-}
-
-apt_install() {
-    local description="$1"
+# ----------------------------------------------------------------------
+# Logging Functions (No Emojis)
+# ----------------------------------------------------------------------
+log() {
+    local level="$1"
     shift
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %T')
 
-    echo "[+] $description"
+    case "$level" in
+        info)
+            echo "[INFO] $timestamp: $*" >&2
+            ;;
+        success)
+            echo "[SUCCESS] $timestamp: $*" >&2
+            ;;
+        warn)
+            echo "[WARN] $timestamp: $*" >&2
+            ;;
+        error)
+            echo "[ERROR] $timestamp: $*" >&2
+            ;;
+        fatal)
+            echo "[FATAL] $timestamp: $*" >&2
+            exit 1
+            ;;
+    esac
+}
 
-    if sudo apt-get install -y "$@"; then
-        ok "$description"
-    else
-        fail "$description"
+cyan() {
+    echo "${cyan}$*${reset}"
+}
+
+green() {
+    echo "${green}$*${reset}"
+}
+
+red() {
+    echo "${red}$*${reset}"
+}
+
+yellow() {
+    echo "${yellow}$*${reset}"
+}
+
+blue() {
+    echo "${blue}$*${reset}"
+}
+
+# Colors for terminal output
+readonly cyan='\033[0;36m'
+readonly green='\033[0;32m'
+readonly red='\033[0;31m'
+readonly yellow='\033[1;33m'
+readonly blue='\033[0;34m'
+readonly reset='\033[0m'
+
+# ----------------------------------------------------------------------
+# Package Manager Functions
+# ----------------------------------------------------------------------
+install_debian() {
+    log "info" "Using apt package manager (Debian/Ubuntu/Kali)"
+
+    local failed=()
+
+    # Update package lists
+    log "info" "Updating package lists..."
+    if ! apt-get update -qq; then
+        log "warn" "APT update failed, continuing..."
+    fi
+
+    # Create cache directory
+    mkdir -p /var/cache/apt/archives
+
+    # Base tools
+    log "info" "Installing base dependencies..."
+    apt-get install -y --no-install-recommends \
+        curl wget git jq coreutils \
+        python3 python3-pip python3-venv \
+        ca-certificates gnupg lsb-release \
+        build-essential libssl-dev libffi-dev \
+        python3-yaml patchelf > /dev/null 2>&1 || failed+=("base tools")
+
+    # HTTP tools
+    log "info" "Installing HTTP reconnaissance tools..."
+    apt-get install -y --no-install-recommends \
+        httpx nmap ffuf subfinder httpx \
+        amass assetfinder httpx-httpx \
+        whatweb mmhttpx httpx > /dev/null 2>&1 || failed+=("httpx httpx")
+
+    # Detection tools
+    log "info" "Installing detection and enumeration tools..."
+    apt-get install -y --no-install-recommends \
+        nuclei gobuster dirsearch dirb \
+        dirb httprobe > /dev/null 2>&1 || failed+=("gobuster dirsearch")
+
+    # Database tools
+    log "info" "Installing database testing tools..."
+    apt-get install -y --no-install-recommends \
+        sqlmap mysql-client postgresql-client \
+        redis-tools mongodb-client > /dev/null 2>&1 || failed+=("sqlmap db tools")
+
+    # Subdomain tools
+    log "info" "Installing subdomain enumeration tools..."
+    apt-get install -y --no-install-recommends \
+        dnsgen cwhois whois dnsrecon \
+        subjack dnsenum > /dev/null 2>&1 || failed+=("sub domain tools")
+
+    # Utilities
+    log "info" "Installing utilities and helpers..."
+    apt-get install -y --no-install-recommends \
+        tmux htop ncdu tree jq yq \
+        bat fd-find ripgrep ispell \
+        shellcheck parallel aria2 unzip \
+        python3-requests python3-netaddr > /dev/null 2>&1 || failed+=("utilities")
+
+    # Go and Rust (for Go-based tools)
+    log "info" "Installing Go..."
+    cd /tmp
+    wget -q --show-progress https://go.dev/dl/go1.23.5.linux-amd64.tar.gz && \
+        sudo tar -C /usr/local -xzf go1.23.5.linux-amd64.tar.gz && \
+        rm -f go1.23.5.linux-amd64.tar.gz || log "warn" "Go installation failed, skipping"
+
+    cd - > /dev/null
+
+    return "${#failed[@]}"
+}
+
+install_arch() {
+    log "info" "Using pacman package manager (Arch Linux)"
+
+    local failed=()
+
+    # Update package lists
+    log "info" "Syncing repositories..."
+    if ! pacman -Sy --noconfirm > /dev/null 2>&1; then
+        log "warn" "Pacman sync failed, continuing..."
+    fi
+
+    # Base tools
+    log "info" "Installing base dependencies..."
+    pacman -Sy --noconfirm --needed \
+        base-devel git jq python python-pip \
+        python-pipenv python2 curl wget \
+        go git ansible retawq zsh \
+        mlocate grep sed awk gawk \
+        shellcheck parparallel > /dev/null 2>&1 || failed+=("base tools")
+
+    # HTTP tools
+    log "info" "Installing HTTP reconnaissance tools..."
+    pacman -Sy --noconfirm --needed \
+        httpx nmap ffuf subfinder \
+        amass assetfinder gobuster \
+        dirsearch dirb dnsgen dwhois whois > /dev/null 2>&1 || failed+=("http tools")
+
+    # Detection tools
+    log "info" "Installing detection and enumeration tools..."
+    pacman -Sy --noconfirm --needed \
+        nuclei gobuster httprobe nmap > /dev/null 2>&1 || failed+=("detection tools")
+
+    return "${#failed[@]}"
+}
+
+install_alma() {
+    log "info" "Using dnf package manager (AlmaLinux/CentOS/RHEL)"
+
+    local failed=()
+
+    # Update package lists
+    log "info" "Updating repositories..."
+    if ! dnf makecache fast > /dev/null 2>&1; then
+        log "warn" "DNF cache failed, continuing..."
+    fi
+
+    # Base tools
+    log "info" "Installing base dependencies..."
+    dnf install -y --nodocs \
+        git jq python3 python3-pip \
+        curl wget ansible-core pybind11 \
+        python3-requests python3-netaddr \
+        python3-yaml python3-psutil \
+        rsync strace lsof nmap > /dev/null 2>&1 || failed+=("base tools")
+
+    # HTTP tools
+    log "info" "Installing HTTP reconnaissance tools..."
+    dnf install -y --nodocs \
+        httpx nmap ffuf subfinder \
+        amass assetfinder gobuster \
+        dirsearch dirb dirb3 dirb4 \
+        dnsgen dwhois whois > /dev/null 2>&1 || failed+=("http tools")
+
+    # Utilities
+    log "info" "Installing utilities..."
+    dnf install -y --nodocs \
+        tmux htop ncdu tree bat fzf \
+        ripgrep command-not-found whatpackage > /dev/null 2>&1 || failed+=("utilities")
+
+    return "${#failed[@]}"
+}
+
+install_fedora() {
+    log "info" "Using dnf package manager (Fedora)"
+
+    local failed=()
+
+    # Base tools
+    log "info" "Installing base dependencies..."
+    dnf install -y --nodocs \
+        git jq python3 python3-pip \
+        curl wget python3-requests python3-netaddr \
+        python3-yaml python3-psutil \
+        ansible-core python3-pyOpenSSL > /dev/null 2>&1 || failed+=("base tools")
+
+    # HTTP tools
+    log "info" "Installing HTTP reconnaissance tools..."
+    dnf install -y --nodocs \
+        httpx nmap ffuf subfinder \
+        amass assetfinder gobuster \
+        dirsearch dirb dnsgen dwhois whois > /dev/null 2>&1 || failed+=("http tools")
+
+    # Utilities
+    log "info" "Installing utilities..."
+    dnf install -y --nodocs \
+        tmux htop ncdu tree bat fzf \
+        ripgrep > /dev/null 2>&1 || failed+=("utilities")
+
+    return "${#failed[@]}"
+}
+
+install_alpine() {
+    log "info" "Using apk package manager (Alpine Linux)"
+
+    local failed=()
+
+    # Basic setup
+    apk add --no-cache \
+        bash coreutils curl wget git \
+        jq python3 py3-pip openjdk8 \
+        gcc musl-dev linux-headers > /dev/null 2>&1 || failed+=("base tools")
+
+    # HTTP tools (may need pip)
+    log "info" "Installing HTTP reconnaissance tools..."
+    pip3 install --no-cache-dir --upgrade \
+        httpx nuclei ffuf gobuster \
+        subfinder amass assetfinder \
+        termius > /dev/null 2>&1 || failed+=("http tools via pip")
+
+    return "${#failed[@]}"
+}
+
+# ----------------------------------------------------------------------
+# Tool Setup Functions
+# ----------------------------------------------------------------------
+setup_git() {
+    log "info" "Configuring git"
+    git config --global user.name "D3fault-Death"
+    git config --global user.email "noreply@d3fault-death.example.com"
+}
+
+setup_hive() {
+    log "info" "Setting up Hive"
+    if [[ -d hive ]]; then
+        cd hive
+        git pull origin main > /dev/null 2>&1 || git clone git@github.com:d3fault-death/hive.git . > /dev/null 2>&1
+        cd - > /dev/null
     fi
 }
 
-pip_install() {
-    local description="$1"
-    shift
+setup_kev() {
+    log "info" "Setting up CISA KEV database"
+    mkdir -p "$HOME/.subjack"
 
-    echo "[+] $description"
+    # Download CISA KEV list
+    if command -v curl &>/dev/null 2>&1; then
+        curl -fsSL \
+            "https://www.cisa.gov/known-exploited-vulnerabilities-catalog" \
+            -o /tmp/kev-page.html > /dev/null 2>&1
 
-    if "$VENV/bin/python" -m pip install "$@"; then
-        ok "$description"
-    else
-        fail "$description"
+        if command -v jq &>/dev/null 2>&1; then
+            # Parse JSON if available
+            jq -r '.[] | "- " + .cveID + " - " + .dateAdded + "\n  " + .title + "\n" 2>/dev/null || true' \
+                /tmp/kev-page.html | head -100 > "$HOME/.subjack/fingerprints.json"
+        fi
+
+        rm -f /tmp/kev-page.html
     fi
 }
 
+<<<<<<< Updated upstream
 clone_repo() {
     local url="$1"
     local dir="$2"
@@ -804,3 +1083,145 @@ else
 
     exit 1
 fi
+=======
+setup_pip_packages() {
+    log "info" "Setting up Python packages"
+
+    local pip_packages=(
+        requests
+        nettacker
+        masscan
+        arjun
+        theHarvester
+    )
+
+    for package in "${pip_packages[@]}"; do
+        log "info" "Installing Python package: $package"
+        pip3 install --no-cache-dir "$package" > /dev/null 2>&1 || true
+    done
+}
+
+setup_go_bins() {
+    log "info" "Setting up Go binaries"
+
+    cd /tmp
+
+    # Install gobuster
+    if command -v go &>/dev/null 2>&1; then
+        export GOPATH="$HOME/go"
+        export PATH="$GOPATH/bin:$PATH"
+
+        log "info" "Building gobuster from source"
+        go install github.com/ffuf/ffuf/v2/cmd/gobuster@latest 2>&1 | tee -a /tmp/go-install.log || \
+            log "warn" "Go installation failed"
+
+        mkdir -p "$GOPATH/bin"
+
+        log "info" "Building nuclei"
+        git clone --depth 1 https://github.com/projectdiscovery/nuclei.git > /dev/null 2>&1
+        cd nuclei
+        go build -o /usr/local/bin/nuclei 2>&1 | tee -a /tmp/go-install.log || \
+            log "warn" "nuclei build failed"
+        cd - > /dev/null
+
+        # Clean up
+        rm -rf nuclei
+    fi
+
+    cd - > /dev/null
+}
+
+create_workspaces() {
+    log "info" "Creating workspace directories"
+
+    local workspaces=(
+        "$HOME/.d3fault-work"
+        "$HOME/.d3fault-work/active"
+        "$HOME/.d3fault-work/historical"
+        "$HOME/.subjack"
+        "$HOME/.config/d3fault-death"
+    )
+
+    for dir in "${workspaces[@]}"; do
+        mkdir -p "$dir"
+        chmod 700 "$dir"
+    done
+}
+
+cleanup() {
+    log "info" "Cleaning up temporary files"
+    rm -rf /tmp/* 2>/dev/null || true
+}
+
+# ----------------------------------------------------------------------
+# Main Installation Flow
+# ----------------------------------------------------------------------
+main() {
+    log "info" "D3fault-Death Dependency Installer"
+    log "info" "====================================="
+    log "info" "Starting installation process"
+
+    local failed=()
+
+    # Detect operating system
+    detect_os
+
+    # Run platform-specific installation
+    case "${os_name}" in
+        debian|ubuntu|kali)
+            failed+=("deb: $(install_debian)")
+            ;;
+        arch|manjaro|endeavouros)
+            failed+=("arch: $(install_arch)")
+            ;;
+        almalinux|centos|rhel|rocky)
+            failed+=("almalinux: $(install_alma)")
+            ;;
+        fedora)
+            failed+=("fedora: $(install_fedora)")
+            ;;
+        *)
+            failed+=("unknown: $(install_alpine)")
+            ;;
+    esac
+
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        log "warn" "Some packages failed to install:"
+        for failure in "${failed[@]}"; do
+            log "warn" "  - $failure"
+        done
+        log "warn" "The installer continued so you can see every failure."
+    else
+        log "success" "All installation steps completed."
+    fi
+
+    # Setup configurations
+    setup_git
+    setup_hive
+    setup_kev
+    setup_pip_packages
+    setup_go_bins
+    create_workspaces
+    cleanup
+
+    # Print summary
+    echo ""
+    echo "========================================"
+    echo "INSTALLATION SUMMARY"
+    echo "========================================"
+    echo ""
+    log "info" "All installation steps completed."
+    echo ""
+    log "info" "To activate the environment, run:"
+    log "info" "  source $HOME/.d3fault-work/env/load.sh"
+    echo ""
+    log "info" "Working directories:"
+    log "info" "  - Workspace: $HOME/.d3fault-work"
+    log "info" "  - KEV Database: $HOME/.subjack"
+    echo ""
+    exit 0
+}
+
+# Run main function
+main "$@"
+>>>>>>> Stashed changes
