@@ -2262,7 +2262,18 @@ phase_candidates() {
         [ -f "$live_file" ] || return 0
 
         # HuntOps redirect-params.txt wordlist
+        # FIX (shellcheck SC2034): this list was built but never actually
+        # used -- every probe below was hardcoded to test only `?next=`,
+        # regardless of this list, so an app using `?url=`, `?redirect=`,
+        # `?return_url=`, `?dest=`, etc. instead of `?next=` was never
+        # tested at all despite the "active probe on redirect parameters"
+        # log line implying otherwise. Testing the full ~25-entry list
+        # against all 6 paths x 3 hosts would be 450+ requests, too slow
+        # for one of 11 candidate generators, so this tests a capped,
+        # high-signal subset of the most common real-world redirect
+        # parameter names instead of just one.
         local redirect_params="url redirect redirect_url next next_url return return_url returnTo return_to continue continue_url dest destination target go out forward callback cb ref refer r u to link uri path"
+        local redirect_params_tested="next url redirect return_url dest"
 
         # Test first 3 live hosts
         local hosts_tested=0
@@ -2274,18 +2285,20 @@ phase_candidates() {
             hosts_tested=$((hosts_tested + 1))
             local host; host=$(echo "$base" | sed 's|https\?://||g; s|/.*||g')
 
-            # Test common redirect endpoints
+            # Test common redirect endpoints x a capped set of redirect param names
             for p in "/login" "/auth" "/signin" "/oauth/authorize" "/redirect" "/refer"; do
-                local loc
-                loc=$(timeout 12 wreq -o /dev/null -D - "$base$p?next=//evil.example.com" 2>/dev/null \
-                    | grep -i '^location:' | tr -d '\r' | head -1)
-                if echo "$loc" | grep -qiE "//evil\.example\.com"; then
-                    add_candidate "open-redirect" "$host" "Open redirect via ?next on $p" "HIGH" \
-                        "Server reflects attacker URL in Location header: $loc" \
-                        "curl -skI '$base$p?next=//evil.example.com'" \
-                        "https://owasp.org/www-project-web-security-testing-guide/" "$(_class_cvss open-redirect)" "open-redirect"
-                    count=$((count + 1))
-                fi
+                for rparam in $redirect_params_tested; do
+                    local loc
+                    loc=$(timeout 12 wreq -o /dev/null -D - "$base$p?${rparam}=//evil.example.com" 2>/dev/null \
+                        | grep -i '^location:' | tr -d '\r' | head -1)
+                    if echo "$loc" | grep -qiE "//evil\.example\.com"; then
+                        add_candidate "open-redirect" "$host" "Open redirect via ?${rparam} on $p" "HIGH" \
+                            "Server reflects attacker URL in Location header: $loc" \
+                            "curl -skI '$base$p?${rparam}=//evil.example.com'" \
+                            "https://owasp.org/www-project-web-security-testing-guide/" "$(_class_cvss open-redirect)" "open-redirect"
+                        count=$((count + 1))
+                    fi
+                done
             done
         done < "$tmp_live"
         rm -f "$tmp_live"
@@ -3087,25 +3100,44 @@ _normalize_product_dd() {
   local product="$1"
   product=$(echo "$product" | tr '[:upper:]' '[:lower:]')
 
+  # FIX: shellcheck (SC2221/SC2222) caught that the generic `*httpd*|...|
+  # *apache*` catch-all used to be the FIRST branch in this case statement,
+  # and bash `case` takes the first matching pattern. Since it's broad
+  # enough to match any product string containing "apache" anywhere, it was
+  # silently swallowing every other Apache-ecosystem project whose own
+  # banner also says "Apache" -- which is the norm, not the exception:
+  # "Apache Log4j", "Apache Tomcat"/"Apache-Coyote", "Apache Struts",
+  # "Apache ZooKeeper", "Apache Solr", "Apache Axis2", "Apache Velocity" all
+  # got classified as generic "apache" instead of their real product key,
+  # so cve_match_version() lookups keyed on "log4j"/"tomcat"/"apache_struts"
+  # /etc. (including Log4Shell, CVE-2021-44228) could never be reached for
+  # those services. Fix: the more specific apache-prefixed patterns now run
+  # BEFORE the generic httpd/apache catch-all. Everything else below is in
+  # its original relative order.
   case "$product" in
+    *log4j*|*apache*log4j*) echo "log4j" ;;
+    *tomcat*|*apache*tomcat*|*apache*coyote*) echo "tomcat" ;;
+    *struts*|*apache*struts*) echo "apache_struts" ;;
+    *zookeeper*|*apache*zookeeper*) echo "zookeeper" ;;
+    *solr*|*apache*solr*) echo "solr" ;;
+    *axis2*|*apache*axis*) echo "axis2" ;;
+    *velocity*|*apache*velocity*) echo "velocity" ;;
     *httpd*|*apache*http*|*apache*/*|*apache*) echo "apache" ;;
     *nginx*) echo "nginx" ;;
-    *openssh*|*ssh*|*sshd*) echo "openssh" ;;
+    *openssh*|*sshd*|*ssh*) echo "openssh" ;;
     *vsftpd*|*ftp*vsftpd*) echo "vsftpd" ;;
     *proftpd*) echo "proftpd" ;;
     *openssl*|*libssl*|*ssl*) echo "openssl" ;;
-    *log4j*|*apache*log4j*) echo "log4j" ;;
     *bash*|*gnu*bash*) echo "bash" ;;
+    *phpmyadmin*|*pma*) echo "phpmyadmin" ;;
     *php*fpm*|*php-fpm*) echo "php" ;;
     *php*) echo "php" ;;
     *drupal*) echo "drupal" ;;
     *wordpress*|*wp-*) echo "wordpress" ;;
     *jenkins*) echo "jenkins" ;;
-    *tomcat*|*apache*tomcat*) echo "tomcat" ;;
     *exim*) echo "exim" ;;
     *elasticsearch*|*elastic*search*) echo "elasticsearch" ;;
     *mongodb*|*mongo*db*) echo "mongodb" ;;
-    *phpmyadmin*|*pma*) echo "phpmyadmin" ;;
     *gitlab*) echo "gitlab" ;;
     *grafana*) echo "grafana" ;;
     *redis*) echo "redis" ;;
@@ -3115,20 +3147,15 @@ _normalize_product_dd() {
     *confluence*|*atlassian*confluence*) echo "confluence" ;;
     *exchange*|*microsoft*exchange*) echo "exchange" ;;
     *jira*|*atlassian*jira*) echo "jira" ;;
-    *zookeeper*|*apache*zookeeper*) echo "zookeeper" ;;
-    *solr*|*apache*solr*) echo "solr" ;;
     *weblogic*|*oracle*weblogic*) echo "weblogic" ;;
     *shibboleth*) echo "shibboleth" ;;
     *citrix*adc*|*netscaler*|*citrix*) echo "citrix" ;;
     *pulse*secure*|*pulse*vpn*) echo "pulse" ;;
     *fortinet*|*fortigate*|*fortios*) echo "fortinet" ;;
     *vmware*|*vcenter*|*esxi*) echo "vmware" ;;
-    *struts*|*apache*struts*) echo "apache_struts" ;;
     *jboss*|*wildfly*|*eap*) echo "jboss" ;;
     *glassfish*) echo "glassfish" ;;
-    *axis2*|*apache*axis*) echo "axis2" ;;
     *freemarker*) echo "freemarker" ;;
-    *velocity*|*apache*velocity*) echo "velocity" ;;
     *) echo "$product" ;;
   esac
 }
