@@ -37,6 +37,11 @@ source "$REPO_ROOT/install-dependencies.sh"
 # been moved below, after argument parsing, where $TARGET is known.
 DDEngine="${DDEngine:-huntops}"
 HuntOpsEngine="${HuntOpsEngine:-huntops}"
+# NOTE: static analysis confirms neither of these is read anywhere in this
+# file now that the dead `local dd_engine="$DDEngine"` in phase_vuln_dd() is
+# gone too. Left defined, untouched, in case huntops/config/config.sh or
+# install-dependencies.sh (not included in what you gave me, so I can't
+# check) rely on them being set.
 
 # ------------------------------------------------------------
 # Tool Versions (validated)
@@ -571,7 +576,7 @@ run_authenticated_scan() {
         return 0
     fi
 
-    log "info" "Running authenticated scan for $target against $ENGINE"
+    log "info" "Running authenticated scan for $target against $ENGINE (mode: $mode)"
 
     # Extract headers without flags
     local headers=()
@@ -663,12 +668,14 @@ run_phase() {
     local phase="$1"
     shift
 
-    local phase_func
     local phase_args=("$@")
 
     # Convert camelCase to snake_case function names
+    # NOTE: the trailing `sed 's/ves$/ves/'` / `sed 's/pter$/pter/'` passes
+    # removed here were no-ops (pattern identical to replacement) -- cosmetic
+    # cleanup only, no behavior change.
     local func_name
-    func_name=$(echo "$phase" | sed 's/\([A-Z]\)/_\L\1/g; s/^_//' | sed 's/ves$/ves/' | sed 's/pter$/pter/')
+    func_name=$(echo "$phase" | sed 's/\([A-Z]\)/_\L\1/g; s/^_//')
     func_name="phase_${func_name}"
 
     # Check if phase function exists in the source directory
@@ -932,25 +939,47 @@ phase_strategy_engine() {
 phase_vuln_dd() {
     log "info" "Running DoubleDeath specialized attacks"
 
-    local dd_engine="$DDEngine"
-
     # Firewall evasion configuration for DD attacks
     configure_firewall_evasion
 
-    # Run DD attacks with proper configuration
-    if command -v ./D3fault-death.sh &>/dev/null; then
+    # FIX: this used to check `command -v ./D3fault-death.sh`, which tests
+    # a path relative to the CURRENT working directory -- but the `cd
+    # "$REPO_ROOT"` below hadn't happened yet, so this was really checking
+    # whatever directory omni.sh happened to be launched from. If that
+    # wasn't $REPO_ROOT (the common case), the check always failed and
+    # every "dde"/"both" engine run silently fell through to the ffuf
+    # fallback below instead of actually running D3fault-death.sh, even
+    # when it was right there in $REPO_ROOT.
+    if [[ -x "$REPO_ROOT/D3fault-death.sh" ]]; then
         log "info" "Running DoubleDeath shell attacks"
 
         local dd_report="${W}/vuln/dd-attacks.txt"
+        # FIX: was passing the exact same $OUT_DIR that omni.sh itself
+        # writes into (vuln/, cve/, web/, etc.) as D3fault-death.sh's own
+        # -o, and D3fault-death.sh creates its OWN vuln/, web/, cve/, etc.
+        # subdirectories directly inside whatever -o it's given -- so the
+        # two tools would write into and potentially overwrite each
+        # other's files in the same directory tree. Give it a dedicated
+        # subdirectory instead.
+        local dd_outdir="${OUT_DIR}/dd-subscan"
 
-        cd "$REPO_ROOT"
+        # FIX: -m pen was hardcoded, but "pen" is not a mode
+        # D3fault-death.sh recognizes (its apply_mode() only accepts
+        # quick|passive|active|full|bb) -- it would print "Unknown mode"
+        # and exit immediately every time this ran. Map omni's own attack
+        # mode to the closest real D3fault-death.sh mode instead.
+        local dd_mode
+        case "${MODE:-bb}" in
+            bb) dd_mode="bb" ;;
+            ad) dd_mode="full" ;;
+            *)  dd_mode="active" ;;   # e.g. "pen": focused active testing
+        esac
 
-        # Run in background with limits
-        timeout 180s ./D3fault-death.sh \
+        ( cd "$REPO_ROOT" && timeout 180s ./D3fault-death.sh \
             -d "$TARGET" \
-            -m pen \
-            -o "$OUT_DIR" \
-            2>&1 | tee "$dd_report" || true
+            -m "$dd_mode" \
+            -o "$dd_outdir" \
+            2>&1 | tee "$dd_report" ) || true
 
         if [[ -s "$dd_report" ]]; then
             success "DD attacks completed with output logged"
@@ -974,13 +1003,35 @@ phase_strat_loss() {
     echo "Mode: ${MODE:-bb}" >> "$loss_report"
     echo "Completed at: $(date)" >> "$loss_report"
 
-    if [[ "$INSIDE_TMUX" = "0" ]] && command -v ./D3fault-death.sh &>/dev/null; then
-        cd "$REPO_ROOT"
-        timeout 120s ./D3fault-death.sh \
+    # FIX (see phase_vuln_dd for the same three issues, fixed the same way
+    # here):
+    #  1. `command -v ./D3fault-death.sh` tested the wrong (CWD-relative,
+    #     pre-cd) path and always failed unless omni.sh was launched from
+    #     $REPO_ROOT.
+    #  2. `-mode loss` is not even valid getopts syntax for this script's
+    #     optstring ("d:t:o:m:s:w:H:ihva:") -- getopts would read it as -m
+    #     with OPTARG "ode" and silently drop "loss"; and even a correct
+    #     `-m loss` would fail anyway, because D3fault-death.sh has no
+    #     "loss" mode (only quick|passive|active|full|bb). There genuinely
+    #     is no "diversion/noise traffic" mode implemented on the
+    #     D3fault-death.sh side to call into -- mapping to "quick" below is
+    #     the closest real analog (fast, light), not a real implementation
+    #     of loss/diversion semantics. If you want actual decoy/diversion
+    #     traffic generation, that needs to be built into D3fault-death.sh
+    #     first.
+    #  3. the bare `cd "$REPO_ROOT"` permanently changed this script's
+    #     working directory for every phase that ran afterwards, which
+    #     matters because $OUT_DIR / $W are relative paths by default
+    #     (`vulns/$TARGET`) -- later phases/phase_output would then resolve
+    #     them against $REPO_ROOT instead of the directory omni.sh was
+    #     actually launched from. Contained in a subshell now.
+    if [[ "$INSIDE_TMUX" = "0" ]] && [[ -x "$REPO_ROOT/D3fault-death.sh" ]]; then
+        local loss_outdir="${OUT_DIR}/dd-subscan-loss"
+        ( cd "$REPO_ROOT" && timeout 120s ./D3fault-death.sh \
             -d "$TARGET" \
-            -mode loss \
-            -o "$OUT_DIR" \
-            2>&1 | tee "$loss_report" || true
+            -m quick \
+            -o "$loss_outdir" \
+            2>&1 | tee "$loss_report" ) || true
     fi
 
     if [[ -s "$loss_report" ]]; then
